@@ -16,6 +16,7 @@ async function createTables() {
         { name: 'profile_id', typeDefinition: 'uuid', static: false },
         { name: 'url_id', typeDefinition: 'uuid', static: false },
         { name: 'token_auth', typeDefinition: 'text', static: false },
+        { name: 'role', typeDefinition: 'text', static: false },
         { name: 'created_at', typeDefinition: 'timestamp', static: false },
         { name: 'updated_at', typeDefinition: 'timestamp', static: false }
       ],

@@ -1,12 +1,15 @@
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../config/database';
 
+export type UserRole = 'user' | 'admin';
+
 export interface User {
   user_id: string; // This will be a UUID
   email: string;
   profile_id?: string;
   url_id?: string;
   token_auth?: string;
+  role: UserRole;
   created_at: string;
   updated_at: string;
 }
@@ -18,7 +21,8 @@ export async function findOrCreateUser(auth0Sub: string, email: string): Promise
       params: {
         where: JSON.stringify({
           token_auth: { $eq: auth0Sub }
-        })
+        }),
+        'allow-filtering': 'true'
       }
     });
 
@@ -35,6 +39,7 @@ export async function findOrCreateUser(auth0Sub: string, email: string): Promise
         profile_id: uuidv4(),
         url_id: uuidv4(),
         token_auth: auth0Sub, // Store Auth0 sub in token_auth
+        role: 'user', // Default role for new users
         created_at: now,
         updated_at: now
       };
@@ -99,5 +104,27 @@ export async function deleteUser(userId: string): Promise<void> {
     await db.delete(`/users/${userId}`);
   } catch (error) {
     throw error;
+  }
+}
+
+export async function updateUserRole(userId: string, role: UserRole): Promise<User> {
+  try {
+    const now = new Date().toISOString();
+    const response = await db.put(`/users/${userId}`, {
+      role,
+      updated_at: now
+    });
+    return response.data;
+  } catch (error) {
+    throw error;
+  }
+}
+
+export async function isAdmin(userId: string): Promise<boolean> {
+  try {
+    const user = await getUserById(userId);
+    return user?.role === 'admin';
+  } catch (error) {
+    return false;
   }
 } 

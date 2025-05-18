@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { auth } from 'express-oauth2-jwt-bearer';
+import { isAdmin } from '../services/userService';
 
 // Debug logging
 console.log('Auth0 Config in middleware:', {
@@ -17,13 +18,28 @@ export const checkJwt = auth({
 });
 
 export const checkRole = (role: string) => {
-  return (req: Request, res: Response, next: NextFunction) => {
-    const userRoles = req.auth?.payload['https://your-namespace/roles'] as string[];
-    
-    if (!userRoles || !userRoles.includes(role)) {
-      return res.status(403).json({ error: 'Insufficient permissions' });
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const userId = req.auth?.payload.sub;
+      
+      if (!userId) {
+        return res.status(401).json({ error: 'User not authenticated' });
+      }
+
+      // For admin role, use our existing isAdmin function
+      if (role === 'admin') {
+        const isUserAdmin = await isAdmin(userId);
+        if (!isUserAdmin) {
+          return res.status(403).json({ error: 'Admin access required' });
+        }
+      }
+      // For user role, we just need to check if they're authenticated
+      // since all authenticated users have the 'user' role by default
+      
+      next();
+    } catch (error) {
+      console.error('Error in checkRole middleware:', error);
+      res.status(500).json({ error: 'Error checking role' });
     }
-    
-    next();
   };
 }; 
