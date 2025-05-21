@@ -5,16 +5,17 @@ import { isAdmin } from '../services/userService';
 // Debug logging
 console.log('Auth0 Config in middleware:', {
   issuerBaseURL: process.env.AUTH0_ISSUER_BASE_URL,
-  audience: process.env.AUTH0_AUDIENCE
+  audience: process.env.AUTH0_AUDIENCE,
+  audience_management: process.env.AUTH0_MANAGEMENT_AUDIENCE
 });
 
-if (!process.env.AUTH0_ISSUER_BASE_URL || !process.env.AUTH0_AUDIENCE) {
+if (!process.env.AUTH0_ISSUER_BASE_URL || !process.env.AUTH0_AUDIENCE || !process.env.AUTH0_MANAGEMENT_AUDIENCE) {
   throw new Error('Missing required Auth0 configuration. Please check your .env file');
 }
 
 export const checkJwt = auth({
-  audience: process.env.AUTH0_AUDIENCE,
-  issuerBaseURL: process.env.AUTH0_ISSUER_BASE_URL,
+  audience: [process.env.AUTH0_AUDIENCE, process.env.AUTH0_MANAGEMENT_AUDIENCE] as [string, string],
+  issuerBaseURL: 'https://' + process.env.AUTH0_ISSUER_BASE_URL,
 });
 
 export const checkRole = (role: string) => {

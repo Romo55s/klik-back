@@ -2,7 +2,7 @@ import express, { Request } from 'express';
 import { checkJwt } from '../middleware/auth';
 import { ensureUser } from '../middleware/auth0User';
 import { checkAdmin } from '../middleware/checkAdmin';
-import { User } from '../services/userService';
+import { User, getAllUsers, updateUserRole } from '../services/userService';
 import { AuthResult } from 'express-oauth2-jwt-bearer';
 import {
   getCurrentUser,
@@ -11,7 +11,8 @@ import {
   getUsers,
   getUser,
   createUser,
-  updateUserRole
+  updateUserRole as updateUserRoleController,
+  logout
 } from '../controllers/userController';
 
 const router = express.Router();
@@ -23,7 +24,7 @@ interface AuthenticatedRequest extends Request {
 }
 
 // Create user route (requires authentication)
-router.post('/', checkJwt, (req: AuthenticatedRequest, res) => createUser(req, res));
+router.post('/', checkJwt, ensureUser, (req: AuthenticatedRequest, res) => createUser(req, res));
 
 // Current user routes (requires authentication)
 router.get('/me', checkJwt, ensureUser, (req: AuthenticatedRequest, res) => getCurrentUser(req, res));
@@ -33,6 +34,9 @@ router.delete('/me', checkJwt, ensureUser, (req: AuthenticatedRequest, res) => d
 // Admin routes (requires authentication and admin role)
 router.get('/', checkJwt, ensureUser, checkAdmin, (req: AuthenticatedRequest, res) => getUsers(req, res));
 router.get('/:id', checkJwt, ensureUser, checkAdmin, (req: AuthenticatedRequest, res) => getUser(req, res));
-router.put('/:id/role', checkJwt, ensureUser, checkAdmin, (req: AuthenticatedRequest, res) => updateUserRole(req, res));
+router.put('/:id/role', checkJwt, ensureUser, checkAdmin, (req: AuthenticatedRequest, res) => updateUserRoleController(req, res));
+
+// Logout route
+router.post('/logout', checkJwt, logout);
 
 export default router; 

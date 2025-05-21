@@ -8,28 +8,20 @@ interface AuthenticatedRequest extends Request {
   auth?: AuthResult;
 }
 
-export const ensureUser = async (
-  req: AuthenticatedRequest,
-  res: Response,
-  next: NextFunction
-) => {
+export const ensureUser = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const sub = req.auth?.payload.sub;
-    const email = req.auth?.payload.email;
-
     if (!sub) {
-      return res.status(401).json({ error: 'No user ID in token' });
+      return res.status(401).json({ error: 'No sub in token' });
     }
 
-    if (!email) {
-      return res.status(401).json({ error: 'No email in token' });
+    // Skip client credentials
+    if (String(sub).includes('@clients')) {
+      console.log('Skipping client credentials in middleware');
+      return next();
     }
 
-    const user = await findOrCreateUser(
-      String(sub),
-      String(email)
-    );
-
+    const user = await findOrCreateUser(String(sub));
     req.user = user;
     next();
   } catch (error) {
