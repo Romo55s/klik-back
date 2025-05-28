@@ -1,12 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { isAdmin } from '../services/userService';
-import { User } from '../services/userService';
+import { User } from '../interfaces/user.interface';
+import { AuthenticatedRequest } from '../interfaces/request.interface';
 import { AuthResult } from 'express-oauth2-jwt-bearer';
-
-interface AuthenticatedRequest extends Request {
-  user?: User;
-  auth?: AuthResult;
-}
 
 export const checkAdmin = async (
   req: AuthenticatedRequest,

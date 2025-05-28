@@ -1,13 +1,5 @@
-import mongoose, { Document, Schema } from 'mongoose';
-
-export interface ICard extends Document {
-  cardId: string;
-  userId: string;
-  name: string;
-  description?: string;
-  createdAt: Date;
-  updatedAt: Date;
-}
+import mongoose, { Schema } from 'mongoose';
+import { ICard } from '../interfaces/card.interface';
 
 const CardSchema = new Schema({
   cardId: {

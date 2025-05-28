@@ -1,16 +1,12 @@
 import { Response } from 'express';
-import { Request } from 'express';
-import { User, findOrCreateUser, updateUser, deleteUser as deleteUserService, getUserById, getAllUsers, updateUserRole as updateUserRoleService, UserRole, isAdmin } from '../services/userService';
+import { User, UserRole } from '../interfaces/user.interface';
+import { AuthenticatedRequest } from '../interfaces/request.interface';
+import { findOrCreateUser, updateUser, deleteUser as deleteUserService, getUserById, getAllUsers, updateUserRole as updateUserRoleService, isAdmin } from '../services/userService';
 import { AuthResult } from 'express-oauth2-jwt-bearer';
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../config/database';
 import axios from 'axios';
 import { getManagementToken } from '../services/auth0Service';
-
-interface AuthenticatedRequest extends Request {
-  user?: User;
-  auth?: AuthResult;
-}
 
 export const createUser = async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -209,7 +205,7 @@ export const deleteCurrentUser = async (req: AuthenticatedRequest, res: Response
 };
 
 // Admin routes
-export const updateUserRole = async (req: Request, res: Response) => {
+export const updateUserRole = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const adminId = req.auth?.payload.sub;
     if (!adminId) {
@@ -239,7 +235,7 @@ export const updateUserRole = async (req: Request, res: Response) => {
   }
 };
 
-export const getUsers = async (req: Request, res: Response) => {
+export const getUsers = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.auth?.payload.sub;
     if (!userId) {
@@ -274,7 +270,7 @@ export const getUsers = async (req: Request, res: Response) => {
   }
 };
 
-export const getUser = async (req: Request, res: Response) => {
+export const getUser = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.auth?.payload.sub;
     if (!userId) {
@@ -293,7 +289,7 @@ export const getUser = async (req: Request, res: Response) => {
   }
 };
 
-export const deleteUser = async (req: Request, res: Response) => {
+export const deleteUser = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const adminId = req.auth?.payload.sub;
     if (!adminId) {

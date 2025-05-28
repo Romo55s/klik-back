@@ -1,7 +1,8 @@
-import express, { Request } from 'express';
+import express from 'express';
 import { checkJwt } from '../middleware/auth';
 import { ensureUser } from '../middleware/auth0User';
-import { User } from '../services/userService';
+import { User } from '../interfaces/user.interface';
+import { AuthenticatedRequest } from '../interfaces/request.interface';
 import { AuthResult } from 'express-oauth2-jwt-bearer';
 import {
   createScanLog,
@@ -13,12 +14,6 @@ import {
 } from '../controllers/scanLogController';
 
 const router = express.Router();
-
-// Extend Request type for authenticated routes
-interface AuthenticatedRequest extends Request {
-  user?: User;
-  auth?: AuthResult;
-}
 
 // Scan log routes (requires authentication)
 router.post('/', checkJwt, ensureUser, (req: AuthenticatedRequest, res) => createScanLog(req, res));

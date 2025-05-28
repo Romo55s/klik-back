@@ -1,8 +1,10 @@
-import express, { Request } from 'express';
+import express from 'express';
 import { checkJwt } from '../middleware/auth';
 import { ensureUser } from '../middleware/auth0User';
 import { checkAdmin } from '../middleware/checkAdmin';
-import { User, getAllUsers, updateUserRole } from '../services/userService';
+import { User } from '../interfaces/user.interface';
+import { AuthenticatedRequest } from '../interfaces/request.interface';
+import { getAllUsers, updateUserRole } from '../services/userService';
 import { AuthResult } from 'express-oauth2-jwt-bearer';
 import {
   getCurrentUser,
@@ -16,12 +18,6 @@ import {
 } from '../controllers/userController';
 
 const router = express.Router();
-
-// Extend Request type for authenticated routes
-interface AuthenticatedRequest extends Request {
-  user?: User;
-  auth?: AuthResult;
-}
 
 // Create user route (requires authentication)
 router.post('/', checkJwt, ensureUser, (req: AuthenticatedRequest, res) => createUser(req, res));

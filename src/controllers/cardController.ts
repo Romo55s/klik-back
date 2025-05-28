@@ -1,10 +1,8 @@
-import { Request, Response } from 'express';
-import Card, { ICard } from '../models/Card';
-import { User } from '../services/userService';
-
-interface AuthenticatedRequest extends Request {
-  user?: User;
-}
+import { Response } from 'express';
+import Card from '../models/Card';
+import { ICard } from '../interfaces/card.interface';
+import { User } from '../interfaces/user.interface';
+import { AuthenticatedRequest } from '../interfaces/request.interface';
 
 export const createCard = async (req: AuthenticatedRequest, res: Response) => {
   try {

@@ -1,21 +1,14 @@
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../config/database';
-
-export type UserRole = 'user' | 'admin';
-
-export interface User {
-  user_id: string; // This will be a UUID
-  email: string;
-  profile_id?: string;
-  url_id?: string;
-  token_auth?: string;
-  role: UserRole;
-  created_at: string;
-  updated_at: string;
-}
+import { User, UserRole } from '../interfaces/user.interface';
 
 export const findOrCreateUser = async (auth0Sub: string, email?: string): Promise<User> => {
   try {
+    // Validate email
+    if (!email) {
+      throw new Error('Email is required to create a user');
+    }
+
     // First try to find the user by token_auth (Auth0 sub)
     const response = await db.get('/users', {
       params: {
@@ -25,13 +18,37 @@ export const findOrCreateUser = async (auth0Sub: string, email?: string): Promis
       }
     });
 
-    // If user exists, return it
+    // If user exists by token_auth, return it
     if (response.data && response.data.length > 0) {
-      console.log('Found existing user:', response.data[0]);
+      console.log('Found existing user by token_auth:', response.data[0]);
       return response.data[0];
     }
 
-    // If not found, create a new user
+    // If email is provided, also check for existing user by email
+    console.log('email', email);
+    if (email) {
+      const emailResponse = await db.get('/users', {
+        params: {
+          where: JSON.stringify({
+            email: { $eq: email }
+          })
+        }
+      });
+
+      if (emailResponse.data && emailResponse.data.length > 0) {
+        console.log('Found existing user by email:', emailResponse.data[0]);
+        // Update the existing user's token_auth to the new Auth0 sub
+        const updatedUser = await updateUser(emailResponse.data[0].user_id, {
+          token_auth: auth0Sub,
+          updated_at: new Date().toISOString()
+        });
+        return updatedUser;
+      }
+    }else {
+      
+    }
+
+    // If not found by either method, create a new user
     const now = new Date().toISOString();
     const user: User = {
       user_id: uuidv4(),
@@ -55,7 +72,10 @@ export const findOrCreateUser = async (auth0Sub: string, email?: string): Promis
         const retryResponse = await db.get('/users', {
           params: {
             where: JSON.stringify({
-              token_auth: { $eq: auth0Sub }
+              $or: [
+                { token_auth: { $eq: auth0Sub } },
+                { email: { $eq: email || `${auth0Sub}@auth0.com` } }
+              ]
             })
           }
         });

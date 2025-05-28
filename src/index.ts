@@ -11,7 +11,7 @@ import userRoutes from './routes/userRoutes';
 import { checkJwt } from './middleware/auth';
 import { ensureUser } from './middleware/auth0User';
 import { testConnection } from './config/database';
-import { User } from './services/userService';
+import { User } from './interfaces/user.interface';
 
 // Create Express app
 const app = express();

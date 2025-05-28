@@ -1,14 +1,9 @@
 import { Response } from 'express';
-import { Request } from 'express';
-import { User } from '../services/userService';
+import { User } from '../interfaces/user.interface';
+import { AuthenticatedRequest } from '../interfaces/request.interface';
 import { AuthResult } from 'express-oauth2-jwt-bearer';
 import { db } from '../config/database';
 import { v4 as uuidv4 } from 'uuid';
-
-interface AuthenticatedRequest extends Request {
-  user?: User;
-  auth?: AuthResult;
-}
 
 export const createScanLog = async (req: AuthenticatedRequest, res: Response) => {
   try {

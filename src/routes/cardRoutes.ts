@@ -1,7 +1,8 @@
-import express, { Request } from 'express';
+import express from 'express';
 import { checkJwt } from '../middleware/auth';
 import { ensureUser } from '../middleware/auth0User';
-import { User } from '../services/userService';
+import { User } from '../interfaces/user.interface';
+import { AuthenticatedRequest } from '../interfaces/request.interface';
 import {
   createCard,
   getCards,
@@ -11,11 +12,6 @@ import {
 } from '../controllers/cardController';
 
 const router = express.Router();
-
-// Extend Request type for authenticated routes
-interface AuthenticatedRequest extends Request {
-  user?: User;
-}
 
 // All routes require authentication
 router.post('/', checkJwt, ensureUser, (req: AuthenticatedRequest, res) => createCard(req, res));
