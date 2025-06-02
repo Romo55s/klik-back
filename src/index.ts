@@ -5,9 +5,9 @@ dotenv.config();
 import express, { Request } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import mongoose from 'mongoose';
 import cardRoutes from './routes/cardRoutes';
 import userRoutes from './routes/userRoutes';
+import profileRoutes from './routes/profileRoutes';
 import { checkJwt } from './middleware/auth';
 import { ensureUser } from './middleware/auth0User';
 import { testConnection } from './config/database';
@@ -41,6 +41,9 @@ app.get('/api/protected', checkJwt, ensureUser, (req: AuthenticatedRequest, res)
 // User routes
 app.use('/api/users', userRoutes);
 
+// Profile routes (all protected)
+app.use('/api/profile', checkJwt, ensureUser, profileRoutes);
+
 // Card routes (all protected)
 app.use('/api/cards', checkJwt, ensureUser, cardRoutes);
 
@@ -67,10 +70,6 @@ async function startServer() {
     // Start the server
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
-      console.log(`Auth0 configuration:
-        - Issuer: ${process.env.AUTH0_ISSUER_BASE_URL}
-        - Audience: ${process.env.AUTH0_AUDIENCE}
-      `);
     });
   } catch (error) {
     console.error('Failed to start server:', error);

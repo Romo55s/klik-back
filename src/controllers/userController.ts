@@ -162,14 +162,11 @@ export const updateCurrentUser = async (req: AuthenticatedRequest, res: Response
       updatedUser = userResponse.data;
     }
 
-    // Update profile
+    // Update profile - only include updatable fields
     const profileResponse = await db.put(`/profile/${req.user.user_id}`, {
-      profile_id: req.user.profile_id,
-      user_id: req.user.user_id,
       name: name || updatedUser.email.split('@')[0],
       bio: bio || 'Welcome to my profile!',
       avatar_url: avatar_url || null,
-      created_at: req.user.created_at,
       updated_at: now
     });
 

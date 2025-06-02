@@ -44,7 +44,19 @@ export const getProfile = async (req: AuthenticatedRequest, res: Response) => {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const profileResponse = await db.get(`/profile/${userId}`);
+    // Use where clause to find profile by user_id
+    const profileResponse = await db.get('/profile', {
+      params: {
+        where: JSON.stringify({
+          user_id: { $eq: userId }
+        })
+      }
+    });
+
+    if (!profileResponse.data?.data?.length) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+
     res.json(profileResponse.data);
   } catch (error) {
     console.error('Error fetching profile:', error);
@@ -61,18 +73,35 @@ export const updateProfile = async (req: AuthenticatedRequest, res: Response) =>
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const now = new Date().toISOString();
-    const profileId = req.user?.profile_id;
-
-    const profileResponse = await db.put(`/profile/${userId}`, {
-      profile_id: profileId,
-      user_id: userId,
-      name: name || req.user?.email.split('@')[0],
-      bio: bio || 'Welcome to my profile!',
-      avatar_url: avatar_url || null,
-      created_at: req.user?.created_at,
-      updated_at: now
+    // First, get the existing profile using where clause
+    const existingProfileResponse = await db.get('/profile', {
+      params: {
+        where: JSON.stringify({
+          user_id: { $eq: userId }
+        })
+      }
     });
+
+    if (!existingProfileResponse.data?.data?.length) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    const existingProfile = existingProfileResponse.data.data[0];
+    const now = new Date().toISOString();
+
+    // Update only the provided fields, excluding profile_id (primary key)
+    const updates = {
+      user_id: userId,
+      name: name || existingProfile.name,
+      bio: bio || existingProfile.bio,
+      avatar_url: avatar_url || existingProfile.avatar_url,
+      created_at: existingProfile.created_at, // Keep the original creation date
+      updated_at: now
+    };
+
+    // Use PUT to update the profile
+    const profileResponse = await db.put(`/profile/${existingProfile.profile_id}`, updates);
+    console.log('✅ Profile updated:', profileResponse.data);
 
     res.json(profileResponse.data);
   } catch (error) {
