@@ -61,6 +61,20 @@ export const ensureUser = async (req: AuthenticatedRequest, res: Response, next:
       auth0UserInfo?.email || (req.auth?.payload as Auth0Payload)?.email
     );
 
+    // Update token_auth if it's not set or different
+    if (user.token_auth !== sub) {
+      try {
+        await db.put(`/users/${user.user_id}`, {
+          ...user,
+          token_auth: sub,
+          updated_at: new Date().toISOString()
+        });
+        console.log('✅ Updated user token_auth with Auth0 sub:', sub);
+      } catch (error) {
+        console.error('Error updating token_auth:', error);
+      }
+    }
+
     // Only proceed with profile management if we have Auth0 info
     if (auth0UserInfo) {
       try {

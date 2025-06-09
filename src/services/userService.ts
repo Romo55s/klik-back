@@ -2,132 +2,60 @@ import { v4 as uuidv4 } from 'uuid';
 import { db } from '../config/database';
 import { User, UserRole } from '../interfaces/user.interface';
 
-export const findOrCreateUser = async (auth0Sub: string, email?: string): Promise<User> => {
+export const findOrCreateUser = async (auth0Id: string, email?: string): Promise<User> => {
   try {
-    // Validate email
-    if (!email) {
-      throw new Error('Email is required to create a user');
-    }
-
-    // Find user by email
-    const emailResponse = await db.get('/users', {
+    // First try to find user by token_auth
+    const response = await db.get('/users', {
       params: {
         where: JSON.stringify({
-          email: { $eq: email }
+          token_auth: { $eq: auth0Id }
         })
       }
     });
     
-    // If user exists by email, return it
-    if (emailResponse?.data?.data?.length > 0) {
-      const existingUser = emailResponse.data.data[0];
-      console.log('Found existing user by email:', existingUser);
-
-      // Check if profile exists for this user
-      try {
-        const profileResponse = await db.get(`/profile/${existingUser.user_id}`);
-        if (!profileResponse.data?.data?.length) {
-          // Create profile if it doesn't exist
-          const now = new Date().toISOString();
-          const profile = {
-            profile_id: existingUser.profile_id,
-            user_id: existingUser.user_id,
-            name: email.split('@')[0],
-            bio: 'Welcome to my profile!',
-            avatar_url: null,
-            created_at: now,
-            updated_at: now
-          };
-
-          await db.post('/profile', profile);
-          console.log('✅ Profile created for existing user:', existingUser.user_id);
-        }
-      } catch (error) {
-        console.error('Error checking/creating profile for existing user:', error);
-        // Don't throw here, we still want to return the user
-      }
-
-      return existingUser;
+    if (response.data?.data?.length > 0) {
+      console.log('✅ Found existing user by token_auth:', auth0Id);
+      return response.data.data[0];
     }
 
-    // If no user found, create a new one
-    console.log('No existing user found, creating new user...');
-    const now = new Date().toISOString();
-    const user: User = {
+    // If not found by token_auth, try to find by email
+    if (email) {
+      const emailResponse = await db.get('/users', {
+        params: {
+          where: JSON.stringify({
+            email: { $eq: email }
+          })
+        }
+      });
+      if (emailResponse.data?.data?.length > 0) {
+        const user = emailResponse.data.data[0];
+        // Update token_auth if it's different
+        if (user.token_auth !== auth0Id) {
+          await db.put(`/users/${user.user_id}`, {
+            ...user,
+            token_auth: auth0Id,
+            updated_at: new Date().toISOString()
+          });
+          console.log('✅ Updated existing user token_auth:', auth0Id);
+        }
+        return user;
+      }
+    }
+
+    // Create new user if not found
+    const newUser: User = {
       user_id: uuidv4(),
-      email: email,
       profile_id: uuidv4(),
-      url_id: uuidv4(),
-      token_auth: auth0Sub,
-      role: 'user',
-      created_at: now,
-      updated_at: now
+      email: email || '', // Ensure email is always a string
+      token_auth: auth0Id, // Store the Auth0 ID
+      role: 'user', // Add default role
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     };
 
-    try {
-      await db.post('/users', user);
-      console.log('Created new user:', user);
-
-      // Create profile for new user
-      const profile = {
-        profile_id: user.profile_id,
-        user_id: user.user_id,
-        name: email.split('@')[0],
-        bio: 'Welcome to my profile!',
-        avatar_url: null,
-        created_at: now,
-        updated_at: now
-      };
-
-      await db.post('/profile', profile);
-      console.log('✅ Profile created for new user:', user.user_id);
-
-      return user;
-    } catch (error: any) {
-      // If we get a conflict error, try to fetch the user again
-      if (error.response?.status === 409) {
-        console.log('User creation conflict, fetching existing user...');
-        const retryResponse = await db.get('/users', {
-          params: {
-            where: JSON.stringify({
-              email: { $eq: email }
-            })
-          }
-        });
-        
-        if (retryResponse?.data?.data?.length > 0) {
-          const existingUser = retryResponse.data.data[0];
-          console.log('Found user after conflict:', existingUser);
-
-          // Check if profile exists for this user
-          try {
-            const profileResponse = await db.get(`/profile/${existingUser.user_id}`);
-            if (!profileResponse.data?.data?.length) {
-              // Create profile if it doesn't exist
-              const now = new Date().toISOString();
-              const profile = {
-                profile_id: existingUser.profile_id,
-                user_id: existingUser.user_id,
-                name: email.split('@')[0],
-                bio: 'Welcome to my profile!',
-                avatar_url: null,
-                created_at: now,
-                updated_at: now
-              };
-
-              await db.post('/profile', profile);
-              console.log('✅ Profile created for user after conflict:', existingUser.user_id);
-            }
-          } catch (error) {
-            console.error('Error checking/creating profile after conflict:', error);
-            // Don't throw here, we still want to return the user
-          }
-
-          return existingUser;
-        }
-      }
-      throw error;
-    }
+    await db.post('/users', newUser);
+    console.log('✅ Created new user with token_auth:', auth0Id);
+    return newUser;
   } catch (error) {
     console.error('Error in findOrCreateUser:', error);
     throw error;

@@ -186,15 +186,78 @@ export const deleteCurrentUser = async (req: AuthenticatedRequest, res: Response
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    // Delete user's profile first
-    await db.delete(`/profile/${req.user.user_id}`);
-    console.log('✅ Profile deleted');
+    // Get the user record to get the Auth0 ID and profile_id
+    const userResponse = await db.get(`/users/${req.user.user_id}`);
+    if (!userResponse.data) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const profileId = userResponse.data?.data?.[0]?.profile_id;
+    const auth0UserId = userResponse.data?.data?.[0]?.token_auth;
+
+    // First delete the user from Auth0
+    if (auth0UserId) {
+      try {
+        const managementToken = await getManagementToken();
+        const auth0Response = await axios.delete(
+          `https://${process.env.AUTH0_ISSUER_BASE_URL?.replace(/^https?:\/\//, '')}/api/v2/users/${auth0UserId}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${managementToken}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        console.log('✅ User deleted from Auth0:', auth0Response.data);
+      } catch (auth0Error) {
+        console.error('Error deleting user from Auth0:', auth0Error);
+        // Continue with local deletion even if Auth0 deletion fails
+      }
+    } else {
+      console.error('Could not find Auth0 user ID in token_auth');
+    }
+
+    // Delete user's cards if they exist
+    try {
+      const cardsResponse = await db.get('/card', {
+        params: {
+          where: JSON.stringify({
+            user_id: { $eq: req.user.user_id }
+          })
+        }
+      });
+
+      if (cardsResponse.data?.data?.length > 0) {
+        for (const card of cardsResponse.data.data) {
+          await db.delete(`/card/${card.card_id}/${req.user.user_id}`);
+        }
+        console.log('✅ User cards deleted');
+      } else {
+        console.log('No cards found for user');
+      }
+    } catch (cardsError) {
+      console.error('Error deleting user cards:', cardsError);
+      // Continue with other deletions even if cards deletion fails
+    }
+
+    // Delete user's profile using the profile_id
+    if (profileId) {
+      try {
+        await db.delete(`/profile/${profileId}`);
+        console.log('✅ Profile deleted');
+      } catch (profileError) {
+        console.error('Error deleting profile:', profileError);
+        // Continue with user deletion even if profile deletion fails
+      }
+    } else {
+      console.log('No profile found for user');
+    }
 
     // Delete user
     await db.delete(`/users/${req.user.user_id}`);
-    console.log('✅ User deleted');
+    console.log('✅ User deleted from database');
 
-    res.json({ message: 'User and profile deleted successfully' });
+    res.json({ message: 'User, profile, and cards deleted successfully' });
   } catch (error) {
     console.error('Error deleting user:', error);
     res.status(500).json({ error: 'Error deleting user' });
@@ -288,24 +351,49 @@ export const getUser = async (req: AuthenticatedRequest, res: Response) => {
 
 export const deleteUser = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const adminId = req.auth?.payload.sub;
-    if (!adminId) {
+    const userId = req.user?.user_id;
+    if (!userId) {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const isUserAdmin = await isAdmin(adminId);
-    if (!isUserAdmin) {
-      return res.status(403).json({ error: 'Admin access required' });
+    // First delete the user from Auth0
+    try {
+      const auth0Response = await axios.delete(
+        `${process.env.AUTH0_ISSUER_BASE_URL}/api/v2/users/${userId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.AUTH0_MANAGEMENT_API_TOKEN}`,
+          },
+        }
+      );
+      console.log('✅ User deleted from Auth0:', auth0Response.data);
+    } catch (auth0Error) {
+      console.error('Error deleting user from Auth0:', auth0Error);
+      // Continue with local deletion even if Auth0 deletion fails
     }
 
-    const { id } = req.params;
-    const success = await deleteUserService(id);
-    if (!success) {
-      return res.status(404).json({ error: 'User not found' });
+    // Delete user's profile first
+    const profileResponse = await db.get('/profile', {
+      params: {
+        where: JSON.stringify({
+          user_id: { $eq: userId }
+        })
+      }
+    });
+
+    if (profileResponse.data?.data?.length) {
+      const profileId = profileResponse.data.data[0].profile_id;
+      await db.delete(`/profile/${profileId}`);
+      console.log('✅ Profile deleted');
     }
+
+    // Then delete the user
+    await db.delete(`/users/${userId}`);
+    console.log('✅ User deleted from database');
 
     res.json({ message: 'User deleted successfully' });
   } catch (error) {
+    console.error('Error deleting user:', error);
     res.status(500).json({ error: 'Error deleting user' });
   }
 };
