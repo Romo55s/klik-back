@@ -6,6 +6,7 @@ import { AuthResult } from 'express-oauth2-jwt-bearer';
 import axios from 'axios';
 import { db } from '../config/database';
 import { Auth0Payload, Auth0UserInfo } from '../interfaces/auth0.interface';
+import { generateUniqueUsername } from '../controllers/profileController';
 
 export const ensureUser = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
@@ -78,15 +79,26 @@ export const ensureUser = async (req: AuthenticatedRequest, res: Response, next:
     // Only proceed with profile management if we have Auth0 info
     if (auth0UserInfo) {
       try {
-        // Check if profile exists
-        const profileResponse = await db.get(`/profile/${user.user_id}`);
+        // Check if profile exists using where clause
+        const profileResponse = await db.get('/profile', {
+          params: {
+            where: JSON.stringify({
+              user_id: { $eq: user.user_id }
+            })
+          }
+        });
         
         if (!profileResponse.data?.data?.length) {
+          // Generate unique username
+          const uniqueUsername = await generateUniqueUsername(auth0UserInfo.email);
+          console.log('✅ Generated unique username:', uniqueUsername);
+
           // Create profile with Auth0 info
           const profile = {
             profile_id: user.profile_id,
             user_id: user.user_id,
             name: auth0UserInfo.name || auth0UserInfo.email.split('@')[0],
+            username: uniqueUsername,
             bio: 'Welcome to my profile!',
             avatar_url: auth0UserInfo.picture || null,
             created_at: new Date().toISOString(),
@@ -101,16 +113,16 @@ export const ensureUser = async (req: AuthenticatedRequest, res: Response, next:
           if (profile.name !== auth0UserInfo.name || profile.avatar_url !== auth0UserInfo.picture) {
             // Update profile directly in the database
             const updates = {
-              profile_id: profile.profile_id,
               user_id: user.user_id,
-              name: auth0UserInfo.name || profile.name,
-              bio: profile.bio,
+              name: profile.name, // Keep existing name
+              username: profile.username, // Keep existing username
+              bio: profile.bio, // Keep existing bio
               avatar_url: auth0UserInfo.picture || profile.avatar_url,
               created_at: profile.created_at,
               updated_at: new Date().toISOString()
             };
 
-            await db.put(`/profile/${user.user_id}`, updates);
+            await db.put(`/profile/${profile.profile_id}`, updates);
             console.log('✅ Profile updated with Auth0 info');
           }
         }

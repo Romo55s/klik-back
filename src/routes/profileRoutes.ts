@@ -10,19 +10,24 @@ import {
   updateProfile,
   deleteProfile,
   getAllProfiles,
-  getProfileById
+  getProfileById,
+  getProfileByUsername
 } from '../controllers/profileController';
 
 const router = express.Router();
 
-// Profile routes (requires authentication)
-router.post('/', checkJwt, ensureUser, (req: AuthenticatedRequest, res) => createProfile(req, res));
-router.get('/me', checkJwt, ensureUser, (req: AuthenticatedRequest, res) => getProfile(req, res));
-router.put('/me', checkJwt, ensureUser, (req: AuthenticatedRequest, res) => updateProfile(req, res));
-router.delete('/me', checkJwt, ensureUser, (req: AuthenticatedRequest, res) => deleteProfile(req, res));
+// Public route - no authentication required
+router.get('/:username', getProfileByUsername);
+
+// Protected routes - require authentication
+router.use(checkJwt);
+router.post('/', createProfile);
+router.get('/me', getProfile);
+router.put('/me', updateProfile);
+router.delete('/me', deleteProfile);
 
 // Admin routes (requires authentication)
-router.get('/', checkJwt, ensureUser, (req: AuthenticatedRequest, res) => getAllProfiles(req, res));
-router.get('/:id', checkJwt, ensureUser, (req: AuthenticatedRequest, res) => getProfileById(req, res));
+router.get('/admin/all', getAllProfiles);
+router.get('/admin/:id', getProfileById);
 
 export default router; 
