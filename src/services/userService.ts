@@ -1,6 +1,12 @@
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../config/database';
 import { User, UserRole } from '../interfaces/user.interface';
+import { generateUniqueUsername } from '../controllers/profileController';
+
+export const generateProfileUrl = (urlId: string): string => {
+  const domain = process.env.FRONTEND_URL || 'https://yourdomain.com';
+  return `${domain}/profile/${urlId}`;
+};
 
 export const findOrCreateUser = async (auth0Id: string, email?: string): Promise<User> => {
   try {
@@ -14,8 +20,29 @@ export const findOrCreateUser = async (auth0Id: string, email?: string): Promise
     });
     
     if (response.data?.data?.length > 0) {
+      const user = response.data.data[0];
+      const updates: any = {
+        updated_at: new Date().toISOString()
+      };
+
+      // If user exists but doesn't have a username, generate one
+      if (!user.username) {
+        updates.username = await generateUniqueUsername(user.email);
+      }
+
+      // If user exists but doesn't have a url_id_text, generate one
+      if (!user.url_id_text) {
+        updates.url_id_text = generateProfileUrl(updates.username || user.username);
+      }
+
+      if (Object.keys(updates).length > 1) { // More than just updated_at
+        await db.put(`/users/${user.user_id}`, updates);
+        console.log('✅ Updated existing user with username and/or URL:', updates);
+        return { ...user, ...updates };
+      }
+
       console.log('✅ Found existing user by token_auth:', auth0Id);
-      return response.data.data[0];
+      return user;
     }
 
     // If not found by token_auth, try to find by email
@@ -29,23 +56,40 @@ export const findOrCreateUser = async (auth0Id: string, email?: string): Promise
       });
       if (emailResponse.data?.data?.length > 0) {
         const user = emailResponse.data.data[0];
-        // Update token_auth if it's different
-        if (user.token_auth !== auth0Id) {
-          await db.put(`/users/${user.user_id}`, {
-            ...user,
-            token_auth: auth0Id,
-            updated_at: new Date().toISOString()
-          });
-          console.log('✅ Updated existing user token_auth:', auth0Id);
+        const updates: any = {
+          token_auth: auth0Id,
+          updated_at: new Date().toISOString()
+        };
+        
+        // If user exists but doesn't have a username, generate one
+        if (!user.username) {
+          updates.username = await generateUniqueUsername(user.email);
         }
-        return user;
+
+        // If user exists but doesn't have a url_id_text, generate one
+        if (!user.url_id_text) {
+          updates.url_id_text = generateProfileUrl(updates.username || user.username);
+        }
+
+        await db.put(`/users/${user.user_id}`, updates);
+        console.log('✅ Updated existing user:', updates);
+        return { ...user, ...updates };
       }
     }
 
     // Create new user if not found
+    const userId = uuidv4();
+    const profileId = uuidv4();
+    
+    // Generate username from email
+    const username = await generateUniqueUsername(email || '');
+    const profileUrl = generateProfileUrl(username);
+
     const newUser: User = {
-      user_id: uuidv4(),
-      profile_id: uuidv4(),
+      user_id: userId,
+      profile_id: profileId,
+      username: username,
+      url_id_text: profileUrl,
       email: email || '', // Ensure email is always a string
       token_auth: auth0Id, // Store the Auth0 ID
       role: 'user', // Add default role
@@ -55,6 +99,20 @@ export const findOrCreateUser = async (auth0Id: string, email?: string): Promise
 
     await db.post('/users', newUser);
     console.log('✅ Created new user with token_auth:', auth0Id);
+
+    // Create profile
+    const profile = {
+      profile_id: profileId,
+      user_id: userId,
+      name: email?.split('@')[0] || username,
+      bio: 'Welcome to my profile!',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    await db.post('/profile', profile);
+    console.log('✅ Created profile for user');
+
     return newUser;
   } catch (error) {
     console.error('Error in findOrCreateUser:', error);
@@ -149,8 +207,9 @@ export const createUser = async (email: string, tokenAuth: string): Promise<User
   const user: User = {
     user_id: userId,
     email,
+    username: await generateUniqueUsername(email),
     profile_id: profileId,
-    url_id: urlId,
+    url_id_text: urlId,
     token_auth: tokenAuth,
     role: 'user', // Default role
     created_at: now.toISOString(),

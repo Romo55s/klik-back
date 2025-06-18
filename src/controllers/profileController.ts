@@ -6,6 +6,7 @@ import { db } from '../config/database';
 import axios from 'axios';
 import { getManagementToken } from '../services/auth0Service';
 import { v4 as uuidv4 } from 'uuid';
+import { createCard } from '../services/cardService';
 
 // Helper function to generate a unique username
 export const generateUniqueUsername = async (email: string): Promise<string> => {
@@ -14,8 +15,8 @@ export const generateUniqueUsername = async (email: string): Promise<string> => 
   const baseUsername = email.split('@')[0].toLowerCase();
   console.log('📝 Base username:', baseUsername);
   
-  // Check if username exists
-  const response = await db.get('/profile', {
+  // Check if username exists in users table
+  const response = await db.get('/users', {
     params: {
       where: JSON.stringify({
         username: { $eq: baseUsername }
@@ -59,16 +60,11 @@ export const createProfile = async (req: AuthenticatedRequest, res: Response) =>
 
     const now = new Date().toISOString();
     const profileId = req.user?.profile_id;
-    
-    // Generate username from email
-    const uniqueUsername = await generateUniqueUsername(userEmail);
-    console.log('✅ Generated unique username:', uniqueUsername);
 
     const profile = {
       profile_id: profileId,
       user_id: userId,
       name: name || userEmail.split('@')[0],
-      username: uniqueUsername,
       bio: bio || 'Welcome to my profile!',
       avatar_url: avatar_url || null,
       created_at: now,
@@ -79,6 +75,24 @@ export const createProfile = async (req: AuthenticatedRequest, res: Response) =>
 
     const profileResponse = await db.post('/profile', profile);
     console.log('✅ Profile created:', profileResponse.data);
+
+    // Create a card for the profile
+    try {
+      // Get user to get username for card
+      const userResponse = await db.get(`/users/${userId}`);
+      const username = userResponse.data?.data?.[0]?.username;
+      
+      if (username) {
+        const card = await createCard(userId, username, {
+          name: `${profile.name}'s Card`,
+          description: 'Profile access card'
+        });
+        console.log('✅ Card created for profile');
+      }
+    } catch (cardError) {
+      console.error('Error creating card:', cardError);
+      // Don't fail the profile creation if card creation fails
+    }
 
     res.status(201).json(profileResponse.data);
   } catch (error) {
@@ -140,11 +154,10 @@ export const updateProfile = async (req: AuthenticatedRequest, res: Response) =>
     const existingProfile = existingProfileResponse.data.data[0];
     const now = new Date().toISOString();
 
-    // Only generate new username if explicitly requested and different from current
-    let newUsername = existingProfile.username;
-    if (username && username !== existingProfile.username) {
+    // Handle username update in users table if provided
+    if (username) {
       // Check if the requested username is available
-      const usernameCheckResponse = await db.get('/profile', {
+      const usernameCheckResponse = await db.get('/users', {
         params: {
           where: JSON.stringify({
             username: { $eq: username }
@@ -152,12 +165,15 @@ export const updateProfile = async (req: AuthenticatedRequest, res: Response) =>
         }
       });
       
-      if (!usernameCheckResponse.data?.data?.length) {
-        newUsername = username; // Use the requested username if available
-      } else {
-        // If requested username is taken, generate a new unique one
-        newUsername = await generateUniqueUsername(req.user?.email || '');
+      if (usernameCheckResponse.data?.data?.length) {
+        return res.status(400).json({ error: 'Username is already taken' });
       }
+
+      // Update username in users table
+      await db.put(`/users/${userId}`, {
+        username,
+        updated_at: now
+      });
     }
 
     // If avatar_url is provided, update it in Auth0
@@ -190,11 +206,10 @@ export const updateProfile = async (req: AuthenticatedRequest, res: Response) =>
       }
     }
 
-    // Update profile
+    // Update profile (without username)
     const updates = {
       user_id: existingProfile.user_id,
       name: name || existingProfile.name,
-      username: newUsername,
       bio: bio || existingProfile.bio,
       avatar_url: avatar_url || existingProfile.avatar_url,
       created_at: existingProfile.created_at,
@@ -320,7 +335,8 @@ export const getProfileByUsername = async (req: AuthenticatedRequest, res: Respo
   try {
     const { username } = req.params;
 
-    const profileResponse = await db.get('/profile', {
+    // First get the user by username
+    const userResponse = await db.get('/users', {
       params: {
         where: JSON.stringify({
           username: { $eq: username }
@@ -328,34 +344,45 @@ export const getProfileByUsername = async (req: AuthenticatedRequest, res: Respo
       }
     });
 
+    if (!userResponse.data?.data?.length) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const user = userResponse.data.data[0];
+
+    // Then get the profile
+    const profileResponse = await db.get('/profile', {
+      params: {
+        where: JSON.stringify({
+          user_id: { $eq: user.user_id }
+        })
+      }
+    });
+
     if (!profileResponse.data?.data?.length) {
-      return res.status(404).json({ error: 'Profile not found' });
+      return res.status(404).json({ message: 'Profile not found' });
     }
 
     const profile = profileResponse.data.data[0];
 
-    // Get user's cards if they exist
-    let cards = [];
-    try {
-      const cardsResponse = await db.get('/card', {
-        params: {
-          where: JSON.stringify({
-            user_id: { $eq: profile.user_id }
-          })
-        }
-      });
-      cards = cardsResponse.data?.data || [];
-    } catch (error) {
-      console.error('Error fetching cards:', error);
-      // Continue without cards if there's an error
-    }
+    // Get user's cards
+    const cardsResponse = await db.get('/card', {
+      params: {
+        where: JSON.stringify({
+          user_id: { $eq: user.user_id }
+        })
+      }
+    });
+
+    const cards = cardsResponse.data?.data || [];
 
     res.json({
+      user,
       profile,
       cards
     });
   } catch (error) {
-    console.error('Error fetching profile by username:', error);
-    res.status(500).json({ error: 'Error fetching profile' });
+    console.error('Error getting profile by username:', error);
+    res.status(500).json({ message: 'Error getting profile' });
   }
 };

@@ -1,10 +1,22 @@
-import { Document } from 'mongoose';
+export interface Card {
+  user_id: string;
+  card_id: string;
+  name: string;
+  description: string;
+  status: string;
+  is_verified: boolean;
+  created_at: string;
+  updated_at: string;
+}
 
-export interface ICard extends Document {
-  cardId: string;
-  userId: string;
-  name: string; 
+export interface CreateCardDto {
+  name?: string;
   description?: string;
-  createdAt: Date;
-  updatedAt: Date;
+}
+
+export interface UpdateCardDto {
+  name?: string;
+  description?: string;
+  status?: string;
+  is_verified?: boolean;
 } 

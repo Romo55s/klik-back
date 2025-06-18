@@ -115,7 +115,6 @@ export const ensureUser = async (req: AuthenticatedRequest, res: Response, next:
             const updates = {
               user_id: user.user_id,
               name: profile.name, // Keep existing name
-              username: profile.username, // Keep existing username
               bio: profile.bio, // Keep existing bio
               avatar_url: auth0UserInfo.picture || profile.avatar_url,
               created_at: profile.created_at,

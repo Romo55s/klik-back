@@ -16,11 +16,7 @@ import {
 
 const router = express.Router();
 
-// Public route - no authentication required
-router.get('/:username', getProfileByUsername);
-
 // Protected routes - require authentication
-router.use(checkJwt);
 router.post('/', createProfile);
 router.get('/me', getProfile);
 router.put('/me', updateProfile);
