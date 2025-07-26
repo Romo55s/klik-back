@@ -7,7 +7,10 @@ import {
   getUserCards,
   getUserCard,
   activateUserCard,
-  deactivateCard
+  deactivateCard,
+  claimCard,
+  createAdditionalCard,
+  getCardsByProfile
 } from '../controllers/cardController';
 
 const router = express.Router();
@@ -22,5 +25,8 @@ router.get('/', getUserCards);
 router.get('/:cardId', getUserCard);
 router.post('/:cardId/activate', activateUserCard);
 router.post('/:cardId/deactivate', deactivateCard);
+router.post('/claim', claimCard);
+router.post('/additional', createAdditionalCard);
+router.get('/profile/:profileUsername', getCardsByProfile);
 
 export default router; 

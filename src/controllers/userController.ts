@@ -50,7 +50,7 @@ export const createUser = async (req: AuthenticatedRequest, res: Response) => {
     );
 
     // Now create the user in our database with the actual email from Auth0 if available
-    const user = await findOrCreateUser(auth0Sub, auth0UserResponse.data.email);
+    const user = await findOrCreateUser(auth0Sub, auth0UserResponse.data.email, auth0UserResponse.data.nickname);
     console.log('✅ User created/found:', user);
 
     // Create profile at the same time as user

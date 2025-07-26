@@ -2,7 +2,6 @@ import { v4 as uuidv4 } from 'uuid';
 import QRCode from 'qrcode';
 import { db } from '../config/database';
 import { Card, CreateCardDto, UpdateCardDto } from '../interfaces/card.interface';
-import { generateProfileUrl } from './userService';
 
 export const generateQRCode = async (url: string): Promise<string> => {
   try {
@@ -18,13 +17,10 @@ export const generateQRCode = async (url: string): Promise<string> => {
   }
 };
 
-export const createCard = async (userId: string, urlId: string, cardData: CreateCardDto): Promise<Card> => {
+export const createCard = async (userId: string, profileUrl: string, cardData: CreateCardDto): Promise<Card> => {
   try {
     const cardId = uuidv4();
     const now = new Date().toISOString();
-    
-    // Generate profile URL
-    const profileUrl = generateProfileUrl(urlId);
 
     const card: Card = {
       user_id: userId,
@@ -102,5 +98,33 @@ export const getCardById = async (userId: string, cardId: string): Promise<Card>
   } catch (error) {
     console.error('Error fetching card:', error);
     throw new Error('Failed to fetch card');
+  }
+}; 
+
+export const verifyCardForUser = async (userId: string): Promise<boolean> => {
+  try {
+    // Get all cards for the user
+    const cards = await getCardByUserId(userId);
+    if (!cards.length) {
+      console.warn('No card found for user:', userId);
+      return false;
+    }
+    // For simplicity, verify the first card
+    const card = cards[0];
+    if (card.is_verified) {
+      console.log('Card already verified for user:', userId);
+      return false;
+    }
+    const updates = {
+      is_verified: true,
+      status: 'active',
+      updated_at: new Date().toISOString()
+    };
+    await db.put(`/card/${userId}/${card.card_id}`, updates);
+    console.log('✅ Card verified for user:', userId);
+    return true;
+  } catch (error) {
+    console.error('Error verifying card for user:', error);
+    return false;
   }
 }; 

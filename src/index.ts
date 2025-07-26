@@ -13,6 +13,7 @@ import { ensureUser } from './middleware/auth0User';
 import { testConnection } from './config/database';
 import { User } from './interfaces/user.interface';
 import { getProfileByUsername } from './controllers/profileController';
+import qrRoutes from './routes/qrRoutes';
 
 // Create Express app
 const app = express();
@@ -50,6 +51,9 @@ app.use('/api/profile', checkJwt, ensureUser, profileRoutes);
 
 // Card routes (all protected)
 app.use('/api/cards', checkJwt, ensureUser, cardRoutes);
+
+// QR verification routes (public)
+app.use('/api/qr', qrRoutes);
 
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

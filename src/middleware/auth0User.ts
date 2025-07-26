@@ -6,7 +6,6 @@ import { AuthResult } from 'express-oauth2-jwt-bearer';
 import axios from 'axios';
 import { db } from '../config/database';
 import { Auth0Payload, Auth0UserInfo } from '../interfaces/auth0.interface';
-import { generateUniqueUsername } from '../controllers/profileController';
 
 export const ensureUser = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
@@ -44,7 +43,8 @@ export const ensureUser = async (req: AuthenticatedRequest, res: Response, next:
       auth0UserInfo = {
         email: userInfoResponse.data.email,
         picture: userInfoResponse.data.picture,
-        name: userInfoResponse.data.name
+        name: userInfoResponse.data.name,
+        nickname: userInfoResponse.data.nickname
       };
 
       console.log('Auth0 user info:', {
@@ -59,7 +59,8 @@ export const ensureUser = async (req: AuthenticatedRequest, res: Response, next:
     // Find or create user with available info
     const user = await findOrCreateUser(
       String(sub), 
-      auth0UserInfo?.email || (req.auth?.payload as Auth0Payload)?.email
+      auth0UserInfo?.email || (req.auth?.payload as Auth0Payload)?.email,
+      auth0UserInfo?.nickname
     );
 
     // Update token_auth if it's not set or different
@@ -89,16 +90,12 @@ export const ensureUser = async (req: AuthenticatedRequest, res: Response, next:
         });
         
         if (!profileResponse.data?.data?.length) {
-          // Generate unique username
-          const uniqueUsername = await generateUniqueUsername(auth0UserInfo.email);
-          console.log('✅ Generated unique username:', uniqueUsername);
-
           // Create profile with Auth0 info
           const profile = {
             profile_id: user.profile_id,
             user_id: user.user_id,
             name: auth0UserInfo.name || auth0UserInfo.email.split('@')[0],
-            username: uniqueUsername,
+            username: auth0UserInfo.nickname || auth0UserInfo.email.split('@')[0],
             bio: 'Welcome to my profile!',
             avatar_url: auth0UserInfo.picture || null,
             created_at: new Date().toISOString(),

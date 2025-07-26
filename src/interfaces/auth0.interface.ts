@@ -7,4 +7,5 @@ export interface Auth0UserInfo {
   email: string;
   picture?: string;
   name?: string;
+  nickname?: string;
 } 

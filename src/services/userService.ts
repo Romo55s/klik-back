@@ -1,14 +1,13 @@
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../config/database';
 import { User, UserRole } from '../interfaces/user.interface';
-import { generateUniqueUsername } from '../controllers/profileController';
 
 export const generateProfileUrl = (urlId: string): string => {
   const domain = process.env.FRONTEND_URL || 'https://yourdomain.com';
   return `${domain}/profile/${urlId}`;
 };
 
-export const findOrCreateUser = async (auth0Id: string, email?: string): Promise<User> => {
+export const findOrCreateUser = async (auth0Id: string, email?: string, nickname?: string): Promise<User> => {
   try {
     // First try to find user by token_auth
     const response = await db.get('/users', {
@@ -25,9 +24,9 @@ export const findOrCreateUser = async (auth0Id: string, email?: string): Promise
         updated_at: new Date().toISOString()
       };
 
-      // If user exists but doesn't have a username, generate one
+      // If user exists but doesn't have a username, use nickname or fallback
       if (!user.username) {
-        updates.username = await generateUniqueUsername(user.email);
+        updates.username = nickname || user.email?.split('@')[0] || 'user';
       }
 
       // If user exists but doesn't have a url_id_text, generate one
@@ -61,9 +60,9 @@ export const findOrCreateUser = async (auth0Id: string, email?: string): Promise
           updated_at: new Date().toISOString()
         };
         
-        // If user exists but doesn't have a username, generate one
+        // If user exists but doesn't have a username, use nickname or fallback
         if (!user.username) {
-          updates.username = await generateUniqueUsername(user.email);
+          updates.username = nickname || user.email?.split('@')[0] || 'user';
         }
 
         // If user exists but doesn't have a url_id_text, generate one
@@ -81,8 +80,8 @@ export const findOrCreateUser = async (auth0Id: string, email?: string): Promise
     const userId = uuidv4();
     const profileId = uuidv4();
     
-    // Generate username from email
-    const username = await generateUniqueUsername(email || '');
+    // Use nickname or generate username from email
+    const username = nickname || email?.split('@')[0] || 'user';
     const profileUrl = generateProfileUrl(username);
 
     const newUser: User = {
@@ -198,7 +197,7 @@ export const getUserByEmail = async (email: string): Promise<User | null> => {
   }
 };
 
-export const createUser = async (email: string, tokenAuth: string): Promise<User> => {
+export const createUser = async (email: string, tokenAuth: string, nickname?: string): Promise<User> => {
   const userId = uuidv4();
   const profileId = uuidv4();
   const urlId = uuidv4();
@@ -207,7 +206,7 @@ export const createUser = async (email: string, tokenAuth: string): Promise<User
   const user: User = {
     user_id: userId,
     email,
-    username: await generateUniqueUsername(email),
+    username: nickname || email?.split('@')[0] || 'user',
     profile_id: profileId,
     url_id_text: urlId,
     token_auth: tokenAuth,
@@ -242,5 +241,24 @@ export const isAdmin = async (userId: string): Promise<boolean> => {
   } catch (error) {
     console.error('Error checking admin status:', error);
     return false;
+  }
+}; 
+
+export const getUserByProfileUrl = async (profileUrl: string): Promise<User | null> => {
+  try {
+    const response = await db.get('/users', {
+      params: {
+        where: JSON.stringify({
+          url_id_text: { $eq: profileUrl }
+        })
+      }
+    });
+    if (response.data?.data?.length) {
+      return response.data.data[0];
+    }
+    return null;
+  } catch (error) {
+    console.error('Error finding user by profileUrl:', error);
+    return null;
   }
 }; 

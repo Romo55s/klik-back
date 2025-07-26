@@ -6,35 +6,12 @@ import { db } from '../config/database';
 import axios from 'axios';
 import { getManagementToken } from '../services/auth0Service';
 import { v4 as uuidv4 } from 'uuid';
-import { createCard } from '../services/cardService';
+import { createCard, getCardByUserId, verifyCardForUser } from '../services/cardService';
+import QRCode from 'qrcode';
+import path from 'path';
+import fs from 'fs';
 
-// Helper function to generate a unique username
-export const generateUniqueUsername = async (email: string): Promise<string> => {
-  console.log('🔍 Generating username for email:', email);
-  // Extract username from email (remove @gmail.com and any other domain)
-  const baseUsername = email.split('@')[0].toLowerCase();
-  console.log('📝 Base username:', baseUsername);
-  
-  // Check if username exists in users table
-  const response = await db.get('/users', {
-    params: {
-      where: JSON.stringify({
-        username: { $eq: baseUsername }
-      })
-    }
-  });
 
-  if (!response.data?.data?.length) {
-    console.log('✅ Username is available:', baseUsername);
-    return baseUsername; // Username is available
-  }
-
-  // If username exists, add a random number between 1000-9999
-  const randomNum = Math.floor(Math.random() * 9000) + 1000;
-  const finalUsername = `${baseUsername}${randomNum}`;
-  console.log('✅ Generated unique username with number:', finalUsername);
-  return finalUsername;
-};
 
 export const createProfile = async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -76,22 +53,24 @@ export const createProfile = async (req: AuthenticatedRequest, res: Response) =>
     const profileResponse = await db.post('/profile', profile);
     console.log('✅ Profile created:', profileResponse.data);
 
-    // Create a card for the profile
+    // After card creation, generate QR code for the user's profile URL
     try {
-      // Get user to get username for card
+      // Get the user's profile URL from the users table
       const userResponse = await db.get(`/users/${userId}`);
-      const username = userResponse.data?.data?.[0]?.username;
-      
-      if (username) {
-        const card = await createCard(userId, username, {
-          name: `${profile.name}'s Card`,
-          description: 'Profile access card'
-        });
-        console.log('✅ Card created for profile');
+      const urlIdText = userResponse.data?.data?.[0]?.url_id_text;
+      if (urlIdText) {
+        // Ensure qr-codes folder exists
+        const qrFolder = path.join(__dirname, '../qr-codes');
+        if (!fs.existsSync(qrFolder)) fs.mkdirSync(qrFolder);
+        // Save QR code as PNG file
+        const qrFilePath = path.join(qrFolder, `${userId}.png`);
+        await QRCode.toFile(qrFilePath, urlIdText, { width: 300 });
+        console.log('✅ QR code generated and saved at:', qrFilePath);
+      } else {
+        console.warn('⚠️  No url_id_text found for user, QR code not generated.');
       }
-    } catch (cardError) {
-      console.error('Error creating card:', cardError);
-      // Don't fail the profile creation if card creation fails
+    } catch (qrError) {
+      console.error('Error generating/saving QR code:', qrError);
     }
 
     res.status(201).json(profileResponse.data);
