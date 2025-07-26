@@ -12,7 +12,7 @@ import { checkJwt } from './middleware/auth';
 import { ensureUser } from './middleware/auth0User';
 import { testConnection } from './config/database';
 import { User } from './interfaces/user.interface';
-import { getProfileByUsername } from './controllers/profileController';
+import { getProfileByUsername, getUserLinks } from './controllers/profileController';
 import qrRoutes from './routes/qrRoutes';
 
 // Create Express app
@@ -43,11 +43,12 @@ app.get('/api/protected', checkJwt, ensureUser, (req: AuthenticatedRequest, res)
 // User routes
 app.use('/api/users', userRoutes);
 
-// Profile routes - public route for getting profile by username
-app.get('/api/profile/:username', getProfileByUsername);
-
-// Protected profile routes
+// Protected profile routes (must come before public routes to avoid conflicts)
 app.use('/api/profile', checkJwt, ensureUser, profileRoutes);
+
+// Profile routes - public routes
+app.get('/api/profile/:username', getProfileByUsername);
+app.get('/api/profile/:username/links', getUserLinks);
 
 // Card routes (all protected)
 app.use('/api/cards', checkJwt, ensureUser, cardRoutes);

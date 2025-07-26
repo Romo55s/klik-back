@@ -18,6 +18,7 @@ export interface Profile {
   name: string;
   bio: string;
   avatar_url?: string;
+  links?: Map<string, string>; // Map of link name to URL (e.g., "LinkedIn" -> "https://linkedin.com/in/username")
   created_at: string;
   updated_at: string;
 }
@@ -27,4 +28,5 @@ export interface ProfileFormData {
   username: string;
   bio: string;
   avatar_url?: string;
+  links?: Map<string, string>; // Added links field
 } 

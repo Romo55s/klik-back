@@ -4,13 +4,25 @@ import { CreateCardDto, Card } from '../interfaces/card.interface';
 import { db } from '../config/database';
 import { v4 as uuidv4 } from 'uuid';
 import QRCode from 'qrcode';
-import { createCard as createCardService, activateCard, getCardByUserId, getCardById } from '../services/cardService';
+import { createCard as createCardService, activateCard, getCardByUserId, getCardById, getValidCardForUser } from '../services/cardService';
+import { getUserByProfileUrl } from '../services/userService';
 
 export const createCard = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user?.user_id;
+    
     if (!userId) {
       return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    // Check if user already has a valid card
+    const existingValidCard = await getValidCardForUser(userId);
+    
+    if (existingValidCard) {
+      return res.status(400).json({ 
+        error: 'User already has a valid card. Only one card per user is allowed.',
+        existingCard: existingValidCard
+      });
     }
 
     const cardData: CreateCardDto = req.body;
@@ -21,13 +33,15 @@ export const createCard = async (req: AuthenticatedRequest, res: Response) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const user = userResponse.data;
+    const user = userResponse.data.data[0]; // Fix: access the first user from the data array
     if (!user.url_id_text) {
       return res.status(400).json({ error: 'User has no URL ID' });
     }
 
     const card = await createCardService(userId, user.url_id_text, cardData);
-    console.log('✅ Card created');
+
+    // Automatically activate and verify the card since it's being created by the user
+    const activatedCard = await activateCard(userId, card.card_id);
 
     // Generate QR code for response
     const profileUrl = user.url_id_text;
@@ -38,7 +52,7 @@ export const createCard = async (req: AuthenticatedRequest, res: Response) => {
     });
 
     res.status(201).json({
-      ...card,
+      ...activatedCard,
       qr_code_image: qrCodeDataUrl
     });
   } catch (error) {
@@ -47,50 +61,9 @@ export const createCard = async (req: AuthenticatedRequest, res: Response) => {
   }
 };
 
-export const getUserCards = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const userId = req.user?.user_id;
-    if (!userId) {
-      return res.status(401).json({ error: 'User not authenticated' });
-    }
-
-    // Get user data for url_id_text
-    const userResponse = await db.get(`/users/${userId}`);
-    if (!userResponse.data) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-
-    const user = userResponse.data;
-    if (!user.url_id_text) {
-      return res.status(400).json({ error: 'User has no URL ID' });
-    }
-
-    const cards = await getCardByUserId(userId);
-    const profileUrl = user.url_id_text;
-    
-    // Generate QR code once for all cards
-    const qrCodeDataUrl = await QRCode.toDataURL(profileUrl, {
-      errorCorrectionLevel: 'H',
-      margin: 1,
-      width: 300
-    });
-
-    const cardsWithQR = cards.map((card: Card) => ({
-      ...card,
-      qr_code_image: qrCodeDataUrl
-    }));
-
-    res.json(cardsWithQR);
-  } catch (error) {
-    console.error('Error fetching user cards:', error);
-    res.status(500).json({ error: 'Error fetching user cards' });
-  }
-};
-
 export const getUserCard = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user?.user_id;
-    const { cardId } = req.params;
 
     if (!userId) {
       return res.status(401).json({ error: 'User not authenticated' });
@@ -102,28 +75,35 @@ export const getUserCard = async (req: AuthenticatedRequest, res: Response) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const user = userResponse.data;
-    if (!user.url_id_text) {
-      return res.status(400).json({ error: 'User has no URL ID' });
-    }
-
-    const card = await getCardById(userId, cardId);
-    const profileUrl = user.url_id_text;
+    const user = userResponse.data.data[0]; // Fix: access the first user from the data array
     
-    // Generate QR code for response
-    const qrCodeDataUrl = await QRCode.toDataURL(profileUrl, {
-      errorCorrectionLevel: 'H',
-      margin: 1,
-      width: 300
-    });
-
-    res.json({
-      ...card,
-      qr_code_image: qrCodeDataUrl
-    });
+    // Get valid card for this user
+    try {
+      const card = await getValidCardForUser(userId);
+      
+      if (!card) {
+        return res.status(404).json({ 
+          error: 'No valid card found for this user',
+          message: 'Create a card first or activate your existing card'
+        });
+      }
+      
+      // Generate QR code if user has url_id_text, otherwise return card without QR
+      if (user.url_id_text) {
+        const qrCodeDataUrl = await QRCode.toDataURL(user.url_id_text, {
+          errorCorrectionLevel: 'H',
+          margin: 1,
+          width: 300
+        });
+        return res.status(200).json({ ...card, qr_code_image: qrCodeDataUrl });
+      }
+      return res.status(200).json(card);
+    } catch (error) {
+      return res.status(500).json({ error: 'Error fetching card' });
+    }
   } catch (error) {
-    console.error('Error fetching card:', error);
-    res.status(500).json({ error: 'Error fetching card' });
+    console.error('Error fetching user card:', error);
+    res.status(500).json({ error: 'Error fetching user card' });
   }
 };
 
@@ -136,23 +116,24 @@ export const deactivateCard = async (req: AuthenticatedRequest, res: Response) =
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const cardResponse = await db.get(`/card/${userId}/${cardId}`);
-    if (!cardResponse.data?.data?.length) {
+    const card = await getCardById(userId, cardId);
+    if (!card) {
       return res.status(404).json({ error: 'Card not found' });
     }
 
-    const card = cardResponse.data.data[0];
-    const updates: Card = {
-      ...card,
-      status: 'inactive',
-      is_verified: false,
-      updated_at: new Date().toISOString()
-    };
+    // Check if user owns this card
+    if (card.user_id !== userId) {
+      return res.status(403).json({ error: 'Not authorized to modify this card' });
+    }
 
-    await db.put(`/card/${userId}/${cardId}`, updates);
+    const updatedCard = await db.put(`/card/${userId}/${cardId}`, {
+      status: 'inactive',
+      updated_at: new Date().toISOString()
+    });
+
     console.log('✅ Card deactivated');
 
-    res.json(updates);
+    res.json(updatedCard.data);
   } catch (error) {
     console.error('Error deactivating card:', error);
     res.status(500).json({ error: 'Error deactivating card' });
@@ -168,10 +149,20 @@ export const activateUserCard = async (req: AuthenticatedRequest, res: Response)
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const card = await activateCard(userId, cardId);
+    const card = await getCardById(userId, cardId);
+    if (!card) {
+      return res.status(404).json({ error: 'Card not found' });
+    }
+
+    // Check if user owns this card
+    if (card.user_id !== userId) {
+      return res.status(403).json({ error: 'Not authorized to modify this card' });
+    }
+
+    const activatedCard = await activateCard(userId, cardId);
     console.log('✅ Card activated');
 
-    res.json(card);
+    res.json(activatedCard);
   } catch (error) {
     console.error('Error activating card:', error);
     res.status(500).json({ error: 'Error activating card' });
@@ -181,60 +172,61 @@ export const activateUserCard = async (req: AuthenticatedRequest, res: Response)
 export const claimCard = async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user?.user_id;
-    const { profileUserId } = req.body; // The user ID whose card is being claimed
+    const { profileUrl, profileUserId } = req.body; // Accept both for backward compatibility
 
     if (!userId) {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    if (!profileUserId) {
-      return res.status(400).json({ error: 'profileUserId is required' });
+    // Check if user already has a valid card
+    const existingValidCard = await getValidCardForUser(userId);
+    if (existingValidCard) {
+      return res.status(400).json({ 
+        error: 'User already has a valid card. Only one card per user is allowed.',
+        existingCard: existingValidCard
+      });
+    }
+
+    // Check if we have either profileUrl or profileUserId
+    if (!profileUrl && !profileUserId) {
+      return res.status(400).json({ 
+        error: 'Either profileUrl or profileUserId is required',
+        received: req.body
+      });
     }
 
     // Get the profile user's information
-    const profileUserResponse = await db.get(`/users/${profileUserId}`);
-    if (!profileUserResponse.data) {
-      return res.status(404).json({ error: 'Profile user not found' });
-    }
-
-    const profileUser = profileUserResponse.data;
-    if (!profileUser.url_id_text) {
-      return res.status(400).json({ error: 'Profile user has no URL ID' });
-    }
-
-    // Check if user already has cards for this profile
-    const existingCards = await getCardByUserId(userId);
-    const existingCardsForProfile = existingCards.filter(card => 
-      card.name.includes(profileUser.username)
-    );
-
-    // If user already has cards for this profile, return them instead of creating new ones
-    if (existingCardsForProfile.length > 0) {
-      console.log(`✅ User already has ${existingCardsForProfile.length} card(s) for this profile`);
-      
-      // Generate QR codes for existing cards
-      const cardsWithQR = await Promise.all(
-        existingCardsForProfile.map(async (card) => {
-          const qrCodeDataUrl = await QRCode.toDataURL(profileUser.url_id_text, {
-            errorCorrectionLevel: 'H',
-            margin: 1,
-            width: 300
-          });
-          return {
-            ...card,
-            qr_code_image: qrCodeDataUrl
-          };
-        })
-      );
-
-      return res.status(200).json({ 
-        message: 'You already have cards for this profile',
-        cards: cardsWithQR,
-        profile_user: {
-          username: profileUser.username,
-          email: profileUser.email
+    let profileUser;
+    
+    if (profileUrl) {
+      // Use profile URL to find user
+      profileUser = await getUserByProfileUrl(profileUrl);
+    } else if (profileUserId) {
+      // If profileUserId is provided, it might be a username
+      // Try to find user by username first
+      const usersResponse = await db.get('/users', {
+        params: {
+          where: JSON.stringify({
+            username: { $eq: profileUserId }
+          })
         }
       });
+      
+      if (usersResponse.data?.data?.length) {
+        profileUser = usersResponse.data.data[0];
+      } else {
+        return res.status(404).json({ 
+          error: 'Profile user not found',
+          searchedFor: profileUserId
+        });
+      }
+    }
+    
+    if (!profileUser) {
+      return res.status(404).json({ error: 'Profile user not found' });
+    }
+    if (!profileUser.url_id_text) {
+      return res.status(400).json({ error: 'Profile user has no URL ID' });
     }
 
     // Create the card for the claiming user
@@ -243,7 +235,10 @@ export const claimCard = async (req: AuthenticatedRequest, res: Response) => {
       description: `Profile access card for ${profileUser.username}`
     });
 
-    console.log('✅ Card claimed successfully');
+    // Activate and verify the card since it was claimed
+    const activatedCard = await activateCard(userId, card.card_id);
+
+    console.log('✅ Card claimed and activated successfully');
 
     // Generate QR code for response
     const qrCodeDataUrl = await QRCode.toDataURL(profileUser.url_id_text, {
@@ -253,7 +248,7 @@ export const claimCard = async (req: AuthenticatedRequest, res: Response) => {
     });
 
     res.status(201).json({
-      ...card,
+      ...activatedCard,
       qr_code_image: qrCodeDataUrl,
       profile_user: {
         username: profileUser.username,
@@ -263,119 +258,5 @@ export const claimCard = async (req: AuthenticatedRequest, res: Response) => {
   } catch (error) {
     console.error('Error claiming card:', error);
     res.status(500).json({ error: 'Error claiming card' });
-  }
-};
-
-export const getCardsByProfile = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const userId = req.user?.user_id;
-    const { profileUsername } = req.params;
-
-    if (!userId) {
-      return res.status(401).json({ error: 'User not authenticated' });
-    }
-
-    if (!profileUsername) {
-      return res.status(400).json({ error: 'profileUsername is required' });
-    }
-
-    // Get all user's cards
-    const allCards = await getCardByUserId(userId);
-    
-    // Filter cards for the specific profile
-    const profileCards = allCards.filter(card => 
-      card.name.includes(profileUsername)
-    );
-
-    if (profileCards.length === 0) {
-      return res.status(404).json({ 
-        message: 'No cards found for this profile',
-        cards: []
-      });
-    }
-
-    // Generate QR codes for all profile cards
-    const cardsWithQR = await Promise.all(
-      profileCards.map(async (card) => {
-        // Use a default profile URL since we don't store it in the card
-        const profileUrl = `https://yourdomain.com/profile/${profileUsername}`;
-          
-        const qrCodeDataUrl = await QRCode.toDataURL(profileUrl, {
-          errorCorrectionLevel: 'H',
-          margin: 1,
-          width: 300
-        });
-        
-        return {
-          ...card,
-          qr_code_image: qrCodeDataUrl
-        };
-      })
-    );
-
-    res.json({
-      profile_username: profileUsername,
-      total_cards: cardsWithQR.length,
-      cards: cardsWithQR
-    });
-  } catch (error) {
-    console.error('Error fetching cards by profile:', error);
-    res.status(500).json({ error: 'Error fetching cards by profile' });
-  }
-};
-
-export const createAdditionalCard = async (req: AuthenticatedRequest, res: Response) => {
-  try {
-    const userId = req.user?.user_id;
-    const { profileUserId, cardName, description } = req.body;
-
-    if (!userId) {
-      return res.status(401).json({ error: 'User not authenticated' });
-    }
-
-    if (!profileUserId) {
-      return res.status(400).json({ error: 'profileUserId is required' });
-    }
-
-    // Get the profile user's information
-    const profileUserResponse = await db.get(`/users/${profileUserId}`);
-    if (!profileUserResponse.data) {
-      return res.status(404).json({ error: 'Profile user not found' });
-    }
-
-    const profileUser = profileUserResponse.data;
-    if (!profileUser.url_id_text) {
-      return res.status(400).json({ error: 'Profile user has no URL ID' });
-    }
-
-    // Create a new card with custom name/description
-    const cardNameToUse = cardName || `${profileUser.username}'s Card ${new Date().toISOString().slice(0, 10)}`;
-    const descriptionToUse = description || `Additional profile access card for ${profileUser.username}`;
-
-    const card = await createCardService(userId, profileUser.url_id_text, {
-      name: cardNameToUse,
-      description: descriptionToUse
-    });
-
-    console.log('✅ Additional card created successfully');
-
-    // Generate QR code for response
-    const qrCodeDataUrl = await QRCode.toDataURL(profileUser.url_id_text, {
-      errorCorrectionLevel: 'H',
-      margin: 1,
-      width: 300
-    });
-
-    res.status(201).json({
-      ...card,
-      qr_code_image: qrCodeDataUrl,
-      profile_user: {
-        username: profileUser.username,
-        email: profileUser.email
-      }
-    });
-  } catch (error) {
-    console.error('Error creating additional card:', error);
-    res.status(500).json({ error: 'Error creating additional card' });
   }
 }; 

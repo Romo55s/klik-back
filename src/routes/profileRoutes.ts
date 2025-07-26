@@ -11,13 +11,24 @@ import {
   deleteProfile,
   getAllProfiles,
   getProfileById,
-  getProfileByUsername
+  getProfileByUsername,
+  addLink,
+  removeLink,
+  getLinks,
+  getUserLinks
 } from '../controllers/profileController';
 
 const router = express.Router();
 
 // Protected routes - require authentication
 router.post('/', createProfile);
+
+// Link management routes (must come before /me routes to avoid conflicts)
+router.get('/links', getLinks);
+router.post('/links', addLink);
+router.delete('/links/:linkName', removeLink);
+
+// Profile management routes
 router.get('/me', getProfile);
 router.put('/me', updateProfile);
 router.delete('/me', deleteProfile);

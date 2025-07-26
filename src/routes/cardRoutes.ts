@@ -4,13 +4,10 @@ import { ensureUser } from '../middleware/auth0User';
 import { AuthenticatedRequest } from '../interfaces/request.interface';
 import {
   createCard,
-  getUserCards,
   getUserCard,
   activateUserCard,
   deactivateCard,
-  claimCard,
-  createAdditionalCard,
-  getCardsByProfile
+  claimCard
 } from '../controllers/cardController';
 
 const router = express.Router();
@@ -19,14 +16,11 @@ const router = express.Router();
 router.use(checkJwt);
 router.use(ensureUser);
 
-// Card routes
+// Card routes - simplified to 1 user = 1 card
 router.post('/', createCard);
-router.get('/', getUserCards);
-router.get('/:cardId', getUserCard);
+router.get('/', getUserCard); // Get user's single card
 router.post('/:cardId/activate', activateUserCard);
 router.post('/:cardId/deactivate', deactivateCard);
 router.post('/claim', claimCard);
-router.post('/additional', createAdditionalCard);
-router.get('/profile/:profileUsername', getCardsByProfile);
 
 export default router; 

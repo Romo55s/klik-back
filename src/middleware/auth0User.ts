@@ -7,6 +7,83 @@ import axios from 'axios';
 import { db } from '../config/database';
 import { Auth0Payload, Auth0UserInfo } from '../interfaces/auth0.interface';
 
+// Cache interface for Auth0 user info
+interface CachedUserInfo {
+  data: Auth0UserInfo;
+  timestamp: number;
+  ttl: number; // Time to live in milliseconds
+}
+
+// In-memory cache for Auth0 user info
+const userInfoCache = new Map<string, CachedUserInfo>();
+
+// Cache configuration
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes in milliseconds
+const CACHE_CLEANUP_INTERVAL = 10 * 60 * 1000; // 10 minutes
+
+// Cleanup expired cache entries periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of userInfoCache.entries()) {
+    if (now - value.timestamp > value.ttl) {
+      userInfoCache.delete(key);
+      console.log(`🗑️  Cleaned up expired cache entry for: ${key}`);
+    }
+  }
+}, CACHE_CLEANUP_INTERVAL);
+
+// Function to get cached user info or fetch from Auth0
+async function getCachedUserInfo(sub: string, accessToken: string, issuerBaseUrl: string): Promise<Auth0UserInfo | null> {
+  const cacheKey = `${sub}:${accessToken.slice(-10)}`; // Use last 10 chars of token as part of key
+  
+  // Check cache first
+  const cached = userInfoCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp) < cached.ttl) {
+    console.log(`📦 Using cached Auth0 user info for: ${sub}`);
+    return cached.data;
+  }
+
+  // Fetch from Auth0 if not cached or expired
+  try {
+    console.log(`🌐 Fetching fresh Auth0 user info for: ${sub}`);
+    const userInfoResponse = await axios.get(
+      `https://${issuerBaseUrl}/userinfo`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`
+        }
+      }
+    );
+
+    const auth0UserInfo: Auth0UserInfo = {
+      email: userInfoResponse.data.email,
+      picture: userInfoResponse.data.picture,
+      name: userInfoResponse.data.name,
+      nickname: userInfoResponse.data.nickname
+    };
+
+    // Cache the result
+    userInfoCache.set(cacheKey, {
+      data: auth0UserInfo,
+      timestamp: Date.now(),
+      ttl: CACHE_TTL
+    });
+
+    console.log(`💾 Cached Auth0 user info for: ${sub}`);
+    return auth0UserInfo;
+  } catch (error) {
+    console.error('Error fetching Auth0 user info:', error);
+    
+    // If we have cached data that's expired, use it as fallback
+    if (cached) {
+      console.log(`🔄 Using expired cached data as fallback for: ${sub}`);
+      return cached.data;
+    }
+    
+    return null;
+  }
+}
+
 export const ensureUser = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const sub = req.auth?.payload.sub;
@@ -21,7 +98,7 @@ export const ensureUser = async (req: AuthenticatedRequest, res: Response, next:
       return next();
     }
 
-    // Get user info from Auth0
+    // Get user info from Auth0 (with caching)
     const issuerBaseUrl = process.env.AUTH0_ISSUER_BASE_URL?.replace(/^https?:\/\//, '');
     const accessToken = req.headers.authorization?.split(' ')[1];
 
@@ -31,28 +108,16 @@ export const ensureUser = async (req: AuthenticatedRequest, res: Response, next:
 
     let auth0UserInfo: Auth0UserInfo | null = null;
     try {
-      const userInfoResponse = await axios.get(
-        `https://${issuerBaseUrl}/userinfo`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`
-          }
-        }
-      );
-
-      auth0UserInfo = {
-        email: userInfoResponse.data.email,
-        picture: userInfoResponse.data.picture,
-        name: userInfoResponse.data.name,
-        nickname: userInfoResponse.data.nickname
-      };
-
-      console.log('Auth0 user info:', {
-        sub,
-        ...auth0UserInfo
-      });
+      auth0UserInfo = await getCachedUserInfo(String(sub), accessToken, issuerBaseUrl!);
+      
+      if (auth0UserInfo) {
+        console.log('Auth0 user info:', {
+          sub,
+          ...auth0UserInfo
+        });
+      }
     } catch (error) {
-      console.error('Error fetching Auth0 user info:', error);
+      console.error('Error in getCachedUserInfo:', error);
       // Continue with basic user creation if Auth0 info can't be fetched
     }
 
@@ -134,4 +199,34 @@ export const ensureUser = async (req: AuthenticatedRequest, res: Response, next:
     console.error('Error in ensureUser middleware:', error);
     res.status(500).json({ error: 'Error processing user' });
   }
+};
+
+// Utility function to clear cache (useful for testing or manual cache management)
+export const clearUserInfoCache = () => {
+  const cacheSize = userInfoCache.size;
+  userInfoCache.clear();
+  console.log(`🧹 Cleared ${cacheSize} cached user info entries`);
+};
+
+// Utility function to get cache stats
+export const getCacheStats = () => {
+  const now = Date.now();
+  let validEntries = 0;
+  let expiredEntries = 0;
+  
+  for (const [key, value] of userInfoCache.entries()) {
+    if (now - value.timestamp < value.ttl) {
+      validEntries++;
+    } else {
+      expiredEntries++;
+    }
+  }
+  
+  return {
+    totalEntries: userInfoCache.size,
+    validEntries,
+    expiredEntries,
+    cacheTTL: CACHE_TTL / 1000, // in seconds
+    cleanupInterval: CACHE_CLEANUP_INTERVAL / 1000 // in seconds
+  };
 }; 

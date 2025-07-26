@@ -19,6 +19,8 @@ export const generateQRCode = async (url: string): Promise<string> => {
 
 export const createCard = async (userId: string, profileUrl: string, cardData: CreateCardDto): Promise<Card> => {
   try {
+    console.log('🔍 createCard service called with:', { userId, profileUrl, cardData });
+    
     const cardId = uuidv4();
     const now = new Date().toISOString();
 
@@ -33,8 +35,9 @@ export const createCard = async (userId: string, profileUrl: string, cardData: C
       updated_at: now
     };
 
+    console.log('🔍 About to create card in DB:', card);
     await db.post('/card', card);
-    console.log('✅ Card created');
+    console.log('✅ Card created successfully in DB');
 
     return card;
   } catch (error) {
@@ -45,28 +48,33 @@ export const createCard = async (userId: string, profileUrl: string, cardData: C
 
 export const activateCard = async (userId: string, cardId: string): Promise<Card> => {
   try {
+    console.log('🔍 activateCard called with:', { userId, cardId });
+    
     // Get the card
+    console.log('🔍 Getting card from DB...');
     const cardResponse = await db.get(`/card/${userId}/${cardId}`);
+    console.log('🔍 Card response:', cardResponse.data);
+    
     if (!cardResponse.data?.data?.length) {
+      console.log('🔍 Card not found in DB');
       throw new Error('Card not found');
     }
 
     const card = cardResponse.data.data[0];
+    console.log('🔍 Found card:', card);
     
-    // Update card status
-    const updates: Card = {
-      ...card,
+    // Update card status - only include fields that can be updated
+    const updates = {
       status: 'active',
       is_verified: true,
       updated_at: new Date().toISOString()
     };
-
+    
+    console.log('🔍 About to update card with:', updates);
     const updatedCard = await db.put(`/card/${userId}/${cardId}`, updates);
-
-    console.log('✅ Card activated');
+    console.log('✅ Card activated successfully:', updatedCard.data);
     return updatedCard.data;
-  } catch (error) {
-    console.error('Error activating card:', error);
+  } catch (error: any) {
     throw new Error('Failed to activate card');
   }
 };
@@ -126,5 +134,41 @@ export const verifyCardForUser = async (userId: string): Promise<boolean> => {
   } catch (error) {
     console.error('Error verifying card for user:', error);
     return false;
+  }
+};
+
+// Helper function to check if a card is valid (verified and active)
+export const isCardValid = (card: Card): boolean => {
+  return card.is_verified && card.status === 'active';
+};
+
+// Helper function to get valid card for user
+export const getValidCardForUser = async (userId: string): Promise<Card | null> => {
+  try {
+    console.log('🔍 getValidCardForUser called for userId:', userId);
+    
+    const cards = await getCardByUserId(userId);
+    console.log('🔍 All cards for user:', cards);
+    
+    if (!cards.length) {
+      console.log('🔍 No cards found for user');
+      return null;
+    }
+    
+    const card = cards[0];
+    console.log('🔍 First card:', card);
+    console.log('🔍 Card is_verified:', card.is_verified);
+    console.log('🔍 Card status:', card.status);
+    
+    if (isCardValid(card)) {
+      console.log('🔍 Card is valid, returning it');
+      return card;
+    }
+    
+    console.log('🔍 Card is not valid, returning null');
+    return null;
+  } catch (error) {
+    console.error('Error getting valid card for user:', error);
+    return null;
   }
 }; 
