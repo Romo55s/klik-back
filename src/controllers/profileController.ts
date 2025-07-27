@@ -313,7 +313,7 @@ export const getProfileByUrl = async (req: AuthenticatedRequest, res: Response) 
 };
 
 // Get profile by username
-export const getProfileByUsername = async (req: AuthenticatedRequest, res: Response) => {
+export const getProfileByUsername = async (req: Request, res: Response) => {
   try {
     const { username } = req.params;
 
