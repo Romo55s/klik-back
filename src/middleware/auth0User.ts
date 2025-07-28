@@ -6,6 +6,10 @@ import { AuthResult } from 'express-oauth2-jwt-bearer';
 import axios from 'axios';
 import { db } from '../config/database';
 import { Auth0Payload, Auth0UserInfo } from '../interfaces/auth0.interface';
+import QRCode from 'qrcode';
+import path from 'path';
+import fs from 'fs';
+import { googleDriveService } from '../services/googleDriveService';
 
 // Cache interface for Auth0 user info
 interface CachedUserInfo {
@@ -169,6 +173,48 @@ export const ensureUser = async (req: AuthenticatedRequest, res: Response, next:
 
           await db.post('/profile', profile);
           console.log('✅ Profile created with Auth0 info');
+
+          // Generate QR code and upload to Google Drive
+          try {
+            // Get the user's profile URL from the users table
+            const userResponse = await db.get(`/users/${user.user_id}`);
+            const urlIdText = userResponse.data?.data?.[0]?.url_id_text;
+            if (urlIdText) {
+              // Ensure qr-codes folder exists locally
+              const qrFolder = path.join(__dirname, '../qr-codes');
+              if (!fs.existsSync(qrFolder)) fs.mkdirSync(qrFolder);
+              
+              // Save QR code as PNG file locally first
+              const qrFilePath = path.join(qrFolder, `${user.user_id}.png`);
+              await QRCode.toFile(qrFilePath, urlIdText, { width: 300 });
+              
+              // Upload to Google Drive
+              const qrCodeUrl = await googleDriveService.uploadQRCode(user.user_id, qrFilePath);
+              
+              // Update profile with QR code URL (exclude primary key)
+              const profileUpdate = {
+                avatar_url: profile.avatar_url,
+                bio: profile.bio,
+                created_at: profile.created_at,
+                links: profile.links,
+                name: profile.name,
+                qr_code_url: qrCodeUrl,
+                updated_at: new Date().toISOString(),
+                user_id: profile.user_id
+              };
+              
+              await db.put(`/profile/${profile.profile_id}`, profileUpdate);
+              
+              // Clean up local file
+              fs.unlinkSync(qrFilePath);
+              
+              console.log('✅ QR code generated and uploaded to Google Drive:', qrCodeUrl);
+            } else {
+              console.warn('⚠️  No url_id_text found for user, QR code not generated.');
+            }
+          } catch (qrError) {
+            console.error('Error generating/uploading QR code:', qrError);
+          }
         } else {
           const profile = profileResponse.data.data[0];
           // Only update if there are changes
