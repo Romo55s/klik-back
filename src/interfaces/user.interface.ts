@@ -18,6 +18,8 @@ export interface Profile {
   name: string;
   bio: string;
   avatar_url?: string;
+  background_image?: string; // Google Drive URL for background image
+  qr_code_url?: string; // Google Drive URL for QR code image
   links?: Map<string, string>; // Map of link name to URL (e.g., "LinkedIn" -> "https://linkedin.com/in/username")
   created_at: string;
   updated_at: string;

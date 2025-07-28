@@ -5,4 +5,5 @@ import { AuthResult } from 'express-oauth2-jwt-bearer';
 export interface AuthenticatedRequest extends Request {
   user?: User;
   auth?: AuthResult;
+  file?: any; // Multer file object
 } 
