@@ -6,6 +6,7 @@ import {
   createUser, 
   getCurrentUser, 
   updateCurrentUser, 
+  deleteCurrentUser,
   getUsers, 
   getUser, 
   deleteUser, 
@@ -24,6 +25,7 @@ router.put('/admin/users/:userId/role', checkJwt, ensureUser, updateUserRole);
 // Current user routes (requires authentication)
 router.get('/me', checkJwt, ensureUser, (req: AuthenticatedRequest, res) => getCurrentUser(req, res));
 router.put('/me', checkJwt, ensureUser, (req: AuthenticatedRequest, res) => updateCurrentUser(req, res));
+router.delete('/me', checkJwt, ensureUser, (req: AuthenticatedRequest, res) => deleteCurrentUser(req, res));
 
 // Cache monitoring routes (for development/debugging)
 router.get('/cache/stats', checkJwt, ensureUser, (req: AuthenticatedRequest, res) => {
