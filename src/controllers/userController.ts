@@ -297,7 +297,7 @@ export const updateUserRole = async (req: AuthenticatedRequest, res: Response) =
 
 export const getUsers = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = req.auth?.payload.sub;
+    const userId = req.user?.user_id; // Use database user_id instead of Auth0 ID
     if (!userId) {
       return res.status(401).json({ error: 'User not authenticated' });
     }
@@ -307,18 +307,26 @@ export const getUsers = async (req: AuthenticatedRequest, res: Response) => {
       return res.status(403).json({ error: 'Admin access required' });
     }
 
-    const users = await getAllUsers();
+    // Get all users - use created_at field to get all users
+    const usersResponse = await db.get('/users', {
+      params: {
+        where: JSON.stringify({
+          created_at: { $gte: '2020-01-01T00:00:00.000Z' }
+        })
+      }
+    });
+    const users = usersResponse.data?.data || [];
     
     // Get profiles for all users
     const profiles = await Promise.all(
-      users.map(user => 
+      users.map((user: any) => 
         db.get(`/profile/${user.user_id}`)
           .then(response => response.data)
           .catch(() => null)
       )
     );
 
-    const usersWithProfiles = users.map((user, index) => ({
+    const usersWithProfiles = users.map((user: any, index: number) => ({
       user,
       profile: profiles[index]
     }));
@@ -418,5 +426,99 @@ export const logout = async (req: AuthenticatedRequest, res: Response) => {
   } catch (error) {
     console.error('Error during logout:', error);
     res.status(500).json({ error: 'Error during logout' });
+  }
+}; 
+
+// Admin dashboard stats
+export const getDashboardStats = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    console.log('🔍 Admin: Getting dashboard stats');
+
+    // Get total users - use created_at field to get all users
+    const usersResponse = await db.get('/users', {
+      params: {
+        where: JSON.stringify({
+          created_at: { $gte: '2020-01-01T00:00:00.000Z' }
+        })
+      }
+    });
+    const totalUsers = usersResponse.data?.data?.length || 0;
+
+    // Get total profiles - count from users (since each user should have a profile)
+    const totalProfiles = totalUsers; // Assuming each user has a profile
+
+    // Get total cards - use created_at field to get all cards
+    const cardsResponse = await db.get('/card', {
+      params: {
+        where: JSON.stringify({
+          created_at: { $gte: '2020-01-01T00:00:00.000Z' }
+        })
+      }
+    });
+    const totalCards = cardsResponse.data?.data?.length || 0;
+    const activeCards = cardsResponse.data?.data?.filter((card: any) => card.status === 'active').length || 0;
+
+    // Get total scan logs - use scan_time field to get all scan logs
+    const scanLogsResponse = await db.get('/scanlog', {
+      params: {
+        where: JSON.stringify({
+          scan_time: { $gte: '2020-01-01T00:00:00.000Z' }
+        })
+      }
+    });
+    const totalScans = scanLogsResponse.data?.data?.length || 0;
+
+    // Get recent activity (last 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    
+    const recentUsersResponse = await db.get('/users', {
+      params: {
+        where: JSON.stringify({
+          created_at: { $gte: sevenDaysAgo.toISOString() }
+        })
+      }
+    });
+    const recentUsers = recentUsersResponse.data?.data?.length || 0;
+
+    const recentScansResponse = await db.get('/scanlog', {
+      params: {
+        where: JSON.stringify({
+          created_at: { $gte: sevenDaysAgo.toISOString() }
+        })
+      }
+    });
+    const recentScans = recentScansResponse.data?.data?.length || 0;
+
+    const stats = {
+      users: {
+        total: totalUsers,
+        recent: recentUsers
+      },
+      profiles: {
+        total: totalProfiles
+      },
+      cards: {
+        total: totalCards,
+        active: activeCards,
+        inactive: totalCards - activeCards
+      },
+      scans: {
+        total: totalScans,
+        recent: recentScans
+      },
+      system: {
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    console.log('✅ Admin: Dashboard stats retrieved');
+
+    res.json(stats);
+  } catch (error) {
+    console.error('Error getting dashboard stats:', error);
+    res.status(500).json({ error: 'Error getting dashboard stats' });
   }
 }; 

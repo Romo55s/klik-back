@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { isAdmin } from '../services/userService';
+import { isAdmin, getUserByEmail } from '../services/userService';
 import { User } from '../interfaces/user.interface';
 import { AuthenticatedRequest } from '../interfaces/request.interface';
 import { AuthResult } from 'express-oauth2-jwt-bearer';
@@ -10,20 +10,45 @@ export const checkAdmin = async (
   next: NextFunction
 ) => {
   try {
-    const userId = req.user?.user_id;
+    const userId = req.user?.user_id; // This is the database user_id
+    const userEmail = req.user?.email;
 
-    if (!userId) {
+    console.log('🔍 checkAdmin middleware called');
+    console.log('User ID:', userId);
+    console.log('User Email:', userEmail);
+    console.log('Full user object:', req.user);
+
+    if (!userId && !userEmail) {
+      console.log('❌ No user_id or email found in request');
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const admin = await isAdmin(userId);
+    console.log('🔍 Checking if user is admin...');
+    let admin = false;
+    
+    // Try with user ID first
+    if (userId) {
+      admin = await isAdmin(userId);
+      console.log('Admin check result (by ID):', admin);
+    }
+    
+    // If not admin by ID, try with email
+    if (!admin && userEmail) {
+      console.log('🔍 Trying admin check with email...');
+      const user = await getUserByEmail(userEmail);
+      admin = user?.role === 'admin';
+      console.log('Admin check result (by email):', admin);
+    }
+
     if (!admin) {
+      console.log('❌ User is not admin');
       return res.status(403).json({ error: 'Admin access required' });
     }
 
+    console.log('✅ User is admin, proceeding...');
     next();
   } catch (error) {
-    console.error('Error in checkAdmin middleware:', error);
+    console.error('❌ Error in checkAdmin middleware:', error);
     res.status(500).json({ error: 'Error checking admin status' });
   }
 }; 

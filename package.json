@@ -8,7 +8,9 @@
     "build": "tsc",
     "test": "jest",
     "setup-db": "ts-node src/scripts/setupAstraDB.ts",
-    "test-backend": "ts-node src/scripts/testBackend.ts"
+    "test-backend": "ts-node src/scripts/testBackend.ts",
+    "make-admin": "ts-node src/scripts/makeUserAdmin.ts",
+    "check-role": "ts-node src/scripts/checkUserRole.ts"
   },
   "keywords": [],
   "author": "",

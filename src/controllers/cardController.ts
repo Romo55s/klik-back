@@ -260,3 +260,160 @@ export const claimCard = async (req: AuthenticatedRequest, res: Response) => {
     res.status(500).json({ error: 'Error claiming card' });
   }
 }; 
+
+// Admin routes for card management
+export const getAllCards = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    console.log('🔍 Admin: Getting all cards');
+
+    // Get all cards - use created_at field to get all cards
+    const cardsResponse = await db.get('/card', {
+      params: {
+        where: JSON.stringify({
+          created_at: { $gte: '2020-01-01T00:00:00.000Z' }
+        })
+      }
+    });
+    
+    if (!cardsResponse.data?.data) {
+      return res.json({ cards: [] });
+    }
+
+    const cards = cardsResponse.data.data;
+
+    // Get user information for each card
+    const cardsWithUsers = await Promise.all(
+      cards.map(async (card: any) => {
+        try {
+          const userResponse = await db.get(`/users/${card.user_id}`);
+          const user = userResponse.data?.data?.[0];
+          return {
+            ...card,
+            user: user ? {
+              user_id: user.user_id,
+              username: user.username,
+              email: user.email,
+              role: user.role
+            } : null
+          };
+        } catch (error) {
+          console.error(`Error fetching user for card ${card.card_id}:`, error);
+          return {
+            ...card,
+            user: null
+          };
+        }
+      })
+    );
+
+    console.log(`✅ Admin: Retrieved ${cardsWithUsers.length} cards`);
+
+    res.json({
+      cards: cardsWithUsers,
+      total: cardsWithUsers.length
+    });
+  } catch (error) {
+    console.error('Error getting all cards:', error);
+    res.status(500).json({ error: 'Error getting all cards' });
+  }
+};
+
+export const getCardByIdAdmin = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { cardId } = req.params;
+
+    console.log('🔍 Admin: Getting card by ID:', cardId);
+
+    const cardResponse = await db.get(`/card/${cardId}`);
+    
+    if (!cardResponse.data?.data?.[0]) {
+      return res.status(404).json({ error: 'Card not found' });
+    }
+
+    const card = cardResponse.data.data[0];
+
+    // Get user information
+    const userResponse = await db.get(`/users/${card.user_id}`);
+    const user = userResponse.data?.data?.[0];
+
+    const cardWithUser = {
+      ...card,
+      user: user ? {
+        user_id: user.user_id,
+        username: user.username,
+        email: user.email,
+        role: user.role
+      } : null
+    };
+
+    console.log('✅ Admin: Retrieved card:', cardId);
+
+    res.json(cardWithUser);
+  } catch (error) {
+    console.error('Error getting card by ID:', error);
+    res.status(500).json({ error: 'Error getting card' });
+  }
+};
+
+export const adminActivateCard = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { cardId } = req.params;
+    const adminUserId = req.user?.user_id;
+
+    console.log('🔍 Admin: Activating card:', cardId, 'by admin:', adminUserId);
+
+    const cardResponse = await db.get(`/card/${cardId}`);
+    
+    if (!cardResponse.data?.data?.[0]) {
+      return res.status(404).json({ error: 'Card not found' });
+    }
+
+    const card = cardResponse.data.data[0];
+
+    // Activate the card
+    const activatedCard = await activateCard(card.user_id, card.card_id);
+
+    console.log('✅ Admin: Card activated successfully');
+
+    res.json({
+      message: 'Card activated successfully by admin',
+      card: activatedCard
+    });
+  } catch (error) {
+    console.error('Error activating card as admin:', error);
+    res.status(500).json({ error: 'Error activating card' });
+  }
+};
+
+export const adminDeactivateCard = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { cardId } = req.params;
+    const adminUserId = req.user?.user_id;
+
+    console.log('🔍 Admin: Deactivating card:', cardId, 'by admin:', adminUserId);
+
+    const cardResponse = await db.get(`/card/${cardId}`);
+    
+    if (!cardResponse.data?.data?.[0]) {
+      return res.status(404).json({ error: 'Card not found' });
+    }
+
+    const card = cardResponse.data.data[0];
+
+    // Deactivate the card directly in database
+    const deactivatedCard = await db.put(`/card/${card.user_id}/${card.card_id}`, {
+      status: 'inactive',
+      updated_at: new Date().toISOString()
+    });
+
+    console.log('✅ Admin: Card deactivated successfully');
+
+    res.json({
+      message: 'Card deactivated successfully by admin',
+      card: deactivatedCard
+    });
+  } catch (error) {
+    console.error('Error deactivating card as admin:', error);
+    res.status(500).json({ error: 'Error deactivating card' });
+  }
+}; 

@@ -160,9 +160,9 @@ export const ensureUser = async (req: AuthenticatedRequest, res: Response, next:
             profile_id: user.profile_id,
             user_id: user.user_id,
             name: auth0UserInfo.name || auth0UserInfo.email.split('@')[0],
-            username: auth0UserInfo.nickname || auth0UserInfo.email.split('@')[0],
             bio: 'Welcome to my profile!',
             avatar_url: auth0UserInfo.picture || null,
+            links: [], // Empty array for AstraDB Map<text, text> type
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           };

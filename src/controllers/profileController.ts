@@ -45,7 +45,7 @@ export const createProfile = async (req: AuthenticatedRequest, res: Response) =>
       name: name || userEmail.split('@')[0],
       bio: bio || 'Welcome to my profile!',
       avatar_url: avatar_url || null,
-      links: links || {}, // Initialize with empty object if no links provided
+      links: links || [], // Initialize with empty array for AstraDB Map<text, text> type
       created_at: now,
       updated_at: now
     };
@@ -243,8 +243,21 @@ export const deleteProfile = async (req: AuthenticatedRequest, res: Response) =>
 // Admin routes
 export const getAllProfiles = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const response = await db.get('/profile');
-    res.json(response.data);
+    // Use the created_at index to get all profiles
+    const response = await db.get('/profile', {
+      params: {
+        where: JSON.stringify({
+          created_at: { $gte: '2020-01-01T00:00:00.000Z' }
+        })
+      }
+    });
+    
+    const profiles = response.data?.data || [];
+    
+    res.json({
+      data: profiles,
+      count: profiles.length
+    });
   } catch (error) {
     console.error('Error fetching profiles:', error);
     res.status(500).json({ error: 'Error fetching profiles' });

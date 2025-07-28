@@ -29,7 +29,7 @@ export const createScanLog = async (req: AuthenticatedRequest, res: Response) =>
       created_at: now
     };
 
-    const response = await db.post('/scan_logs', scanLog);
+    const response = await db.post('/scanlog', scanLog);
     console.log('✅ Scan log created:', response.data);
 
     res.status(201).json(response.data);
@@ -47,16 +47,22 @@ export const getScanLogs = async (req: AuthenticatedRequest, res: Response) => {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const response = await db.get('/scan_logs', {
+    // Get scan logs for the user using scan_time index
+    const response = await db.get('/scanlog', {
       params: {
         where: JSON.stringify({
-          user_id: { $eq: userId }
-        }),
-        'allow-filtering': 'true'
+          scan_time: { $gte: '2020-01-01T00:00:00.000Z' }
+        })
       }
     });
 
-    res.json(response.data);
+    // Filter the results to only include logs for this user
+    const userScanLogs = response.data?.data?.filter((log: any) => log.user_id === userId) || [];
+    
+    res.json({
+      data: userScanLogs,
+      count: userScanLogs.length
+    });
   } catch (error) {
     console.error('Error fetching scan logs:', error);
     res.status(500).json({ error: 'Error fetching scan logs' });
@@ -72,7 +78,7 @@ export const getScanLog = async (req: AuthenticatedRequest, res: Response) => {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const response = await db.get(`/scan_logs/${id}`);
+    const response = await db.get(`/scanlog/${id}`);
     
     if (!response.data) {
       return res.status(404).json({ error: 'Scan log not found' });
@@ -100,7 +106,7 @@ export const deleteScanLog = async (req: AuthenticatedRequest, res: Response) =>
     }
 
     // First get the scan log to verify ownership
-    const getResponse = await db.get(`/scan_logs/${id}`);
+    const getResponse = await db.get(`/scanlog/${id}`);
     
     if (!getResponse.data) {
       return res.status(404).json({ error: 'Scan log not found' });
@@ -110,7 +116,7 @@ export const deleteScanLog = async (req: AuthenticatedRequest, res: Response) =>
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    await db.delete(`/scan_logs/${id}`);
+    await db.delete(`/scanlog/${id}`);
     console.log('✅ Scan log deleted');
 
     res.json({ message: 'Scan log deleted successfully' });
@@ -123,7 +129,14 @@ export const deleteScanLog = async (req: AuthenticatedRequest, res: Response) =>
 // Admin routes
 export const getAllScanLogs = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const response = await db.get('/scan_logs');
+    // Get all scan logs - use scan_time field to get all scan logs
+    const response = await db.get('/scanlog', {
+      params: {
+        where: JSON.stringify({
+          scan_time: { $gte: '2020-01-01T00:00:00.000Z' }
+        })
+      }
+    });
     res.json(response.data);
   } catch (error) {
     console.error('Error fetching scan logs:', error);
@@ -140,17 +153,24 @@ export const getScanLogsByCard = async (req: AuthenticatedRequest, res: Response
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const response = await db.get('/scan_logs', {
+    // Get scan logs using scan_time index and filter by card_id and user_id
+    const response = await db.get('/scanlog', {
       params: {
         where: JSON.stringify({
-          card_id: { $eq: card_id },
-          user_id: { $eq: userId }
-        }),
-        'allow-filtering': 'true'
+          scan_time: { $gte: '2020-01-01T00:00:00.000Z' }
+        })
       }
     });
 
-    res.json(response.data);
+    // Filter the results to only include logs for this card and user
+    const cardScanLogs = response.data?.data?.filter((log: any) => 
+      log.card_id === card_id && log.user_id === userId
+    ) || [];
+    
+    res.json({
+      data: cardScanLogs,
+      count: cardScanLogs.length
+    });
   } catch (error) {
     console.error('Error fetching scan logs:', error);
     res.status(500).json({ error: 'Error fetching scan logs' });

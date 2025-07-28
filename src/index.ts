@@ -8,6 +8,8 @@ import helmet from 'helmet';
 import cardRoutes from './routes/cardRoutes';
 import userRoutes from './routes/userRoutes';
 import profileRoutes from './routes/profileRoutes';
+import adminRoutes from './routes/adminRoutes';
+
 import { checkJwt } from './middleware/auth';
 import { ensureUser } from './middleware/auth0User';
 import { testConnection } from './config/database';
@@ -41,6 +43,9 @@ app.get('/api/protected', checkJwt, ensureUser, (req: AuthenticatedRequest, res)
   });
 });
 
+// Admin routes (must come BEFORE other routes to avoid conflicts)
+app.use('/api/admin', adminRoutes);
+
 // User routes
 app.use('/api/users', userRoutes);
 
@@ -59,6 +64,15 @@ app.use('/api/qr', qrRoutes);
 
 // Scan log routes (protected)
 app.use('/api/scan-logs', checkJwt, ensureUser, scanLogRoutes);
+
+// Debug endpoint to check current user status
+app.get('/api/debug/user', checkJwt, ensureUser, (req: AuthenticatedRequest, res) => {
+  res.json({
+    message: 'Current user info',
+    user: req.user,
+    timestamp: new Date().toISOString()
+  });
+});
 
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

@@ -121,6 +121,8 @@ export const findOrCreateUser = async (auth0Id: string, email?: string, nickname
 
 export async function getUserById(userId: string): Promise<User | null> {
   try {
+    console.log('🔍 getUserById called with userId:', userId);
+    
     const response = await db.get('/users', {
       params: {
         where: JSON.stringify({
@@ -128,8 +130,18 @@ export async function getUserById(userId: string): Promise<User | null> {
         })
       }
     });
-    return response.data && response.data.length > 0 ? response.data[0] : null;
+    
+    console.log('Database response:', response.data);
+    
+    if (response.data?.data?.length > 0) {
+      console.log('✅ User found:', response.data.data[0]);
+      return response.data.data[0];
+    } else {
+      console.log('❌ User not found in database');
+      return null;
+    }
   } catch (error: any) {
+    console.error('❌ Error in getUserById:', error);
     if (error.response?.status === 404) {
       return null;
     }
@@ -139,16 +151,15 @@ export async function getUserById(userId: string): Promise<User | null> {
 
 export async function getAllUsers(): Promise<User[]> {
   try {
-    const whereClause = JSON.stringify({
-      user_id: { $exists: true }
-    });
-    
+    // Get all users - use created_at field to get all users
     const response = await db.get('/users', {
       params: {
-        where: whereClause
+        where: JSON.stringify({
+          created_at: { $gte: '2020-01-01T00:00:00.000Z' }
+        })
       }
     });
-    return response.data || [];
+    return response.data?.data || [];
   } catch (error) {
     console.error('Error getting all users:', error);
     throw error;
@@ -183,14 +194,14 @@ export async function updateUserRole(userId: string, role: UserRole): Promise<Us
 
 export const getUserByEmail = async (email: string): Promise<User | null> => {
   try {
-    const response = await db.get('/tables/users/rows', {
+    const response = await db.get('/users', {
       params: {
-        where: {
+        where: JSON.stringify({
           email: { $eq: email }
-        }
+        })
       }
     });
-    return response.data[0] || null;
+    return response.data?.data?.[0] || null;
   } catch (error) {
     console.error('Error getting user by email:', error);
     return null;
@@ -216,7 +227,7 @@ export const createUser = async (email: string, tokenAuth: string, nickname?: st
   };
 
   try {
-    await db.post('/tables/users/rows', user);
+    await db.post('/users', user);
     return user;
   } catch (error) {
     console.error('Error creating user:', error);
@@ -226,7 +237,7 @@ export const createUser = async (email: string, tokenAuth: string, nickname?: st
 
 export const deleteUser = async (userId: string): Promise<boolean> => {
   try {
-    await db.delete(`/tables/users/rows/${userId}`);
+    await db.delete(`/users/${userId}`);
     return true;
   } catch (error) {
     console.error('Error deleting user:', error);
@@ -236,10 +247,23 @@ export const deleteUser = async (userId: string): Promise<boolean> => {
 
 export const isAdmin = async (userId: string): Promise<boolean> => {
   try {
+    console.log('🔍 isAdmin called with userId:', userId);
+    
     const user = await getUserById(userId);
-    return user?.role === 'admin';
+    console.log('User found:', user);
+    
+    if (!user) {
+      console.log('❌ User not found in database');
+      return false;
+    }
+    
+    console.log('User role:', user.role);
+    const isUserAdmin = user.role === 'admin';
+    console.log('Is user admin?', isUserAdmin);
+    
+    return isUserAdmin;
   } catch (error) {
-    console.error('Error checking admin status:', error);
+    console.error('❌ Error checking admin status:', error);
     return false;
   }
 }; 
