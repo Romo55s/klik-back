@@ -10,6 +10,8 @@ import { createCard, getCardByUserId, verifyCardForUser } from '../services/card
 import QRCode from 'qrcode';
 import path from 'path';
 import fs from 'fs';
+import { googleDriveService } from '../services/googleDriveService';
+import { SocialMediaService } from '../services/socialMediaService';
 
 
 
@@ -55,24 +57,40 @@ export const createProfile = async (req: AuthenticatedRequest, res: Response) =>
     const profileResponse = await db.post('/profile', profile);
     console.log('✅ Profile created:', profileResponse.data);
 
-    // Generate QR code for the user's profile URL
+    // Generate QR code and upload to Google Drive
     try {
       // Get the user's profile URL from the users table
       const userResponse = await db.get(`/users/${userId}`);
       const urlIdText = userResponse.data?.data?.[0]?.url_id_text;
       if (urlIdText) {
-        // Ensure qr-codes folder exists
+        // Ensure qr-codes folder exists locally
         const qrFolder = path.join(__dirname, '../qr-codes');
         if (!fs.existsSync(qrFolder)) fs.mkdirSync(qrFolder);
-        // Save QR code as PNG file
+        
+        // Save QR code as PNG file locally first
         const qrFilePath = path.join(qrFolder, `${userId}.png`);
         await QRCode.toFile(qrFilePath, urlIdText, { width: 300 });
-        console.log('✅ QR code generated and saved at:', qrFilePath);
+        
+        // Upload to Google Drive
+        const qrCodeUrl = await googleDriveService.uploadQRCode(userId, qrFilePath);
+        
+        // Update profile with QR code URL
+        const profileUpdate = {
+          ...profile,
+          qr_code_url: qrCodeUrl
+        };
+        
+        await db.put(`/profile/${profileId}`, profileUpdate);
+        
+        // Clean up local file
+        fs.unlinkSync(qrFilePath);
+        
+        console.log('✅ QR code generated and uploaded to Google Drive:', qrCodeUrl);
       } else {
         console.warn('⚠️  No url_id_text found for user, QR code not generated.');
       }
     } catch (qrError) {
-      console.error('Error generating/saving QR code:', qrError);
+      console.error('Error generating/uploading QR code:', qrError);
     }
 
     res.status(201).json(profileResponse.data);
@@ -688,5 +706,231 @@ export const getUserLinks = async (req: Request, res: Response) => {
   } catch (error) {
     console.error('Error fetching user links:', error);
     res.status(500).json({ error: 'Error fetching user links' });
+  }
+};
+
+// Upload background image to Google Drive
+export const uploadBackgroundImage = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.user_id;
+    
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image file provided' });
+    }
+
+    // Upload to Google Drive
+    const backgroundImageUrl = await googleDriveService.uploadBackgroundImage(userId, req.file.path);
+
+    // Update profile with background image URL
+    const profileResponse = await db.get('/profile', {
+      params: {
+        where: JSON.stringify({
+          user_id: { $eq: userId }
+        })
+      }
+    });
+
+    if (!profileResponse.data?.data?.length) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    const profile = profileResponse.data.data[0];
+    const updates = {
+      ...profile,
+      background_image: backgroundImageUrl,
+      updated_at: new Date().toISOString()
+    };
+
+    await db.put(`/profile/${profile.profile_id}`, updates);
+
+    // Clean up local file
+    fs.unlinkSync(req.file.path);
+
+    res.json({ 
+      message: 'Background image uploaded successfully',
+      background_image: backgroundImageUrl
+    });
+  } catch (error) {
+    console.error('Error uploading background image:', error);
+    res.status(500).json({ error: 'Error uploading background image' });
+  }
+};
+
+// Get available social media platforms
+export const getSocialMediaPlatforms = async (req: Request, res: Response) => {
+  try {
+    const platforms = SocialMediaService.getPlatforms();
+    res.json({ platforms });
+  } catch (error) {
+    console.error('Error getting social media platforms:', error);
+    res.status(500).json({ error: 'Error getting social media platforms' });
+  }
+};
+
+// Add social media link with validation
+export const addSocialMediaLink = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.user_id;
+    const { platform, url } = req.body;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    if (!platform || !url) {
+      return res.status(400).json({ error: 'Platform and URL are required' });
+    }
+
+    // Validate platform
+    const platformInfo = SocialMediaService.getPlatform(platform);
+    if (!platformInfo) {
+      return res.status(400).json({ error: 'Invalid platform' });
+    }
+
+    // Format and validate URL
+    const formattedUrl = SocialMediaService.formatUrl(url);
+    if (!SocialMediaService.validateUrl(platform, formattedUrl)) {
+      return res.status(400).json({ 
+        error: 'Invalid URL format for this platform',
+        placeholder: platformInfo.placeholder
+      });
+    }
+
+    // Get existing profile
+    const profileResponse = await db.get('/profile', {
+      params: {
+        where: JSON.stringify({
+          user_id: { $eq: userId }
+        })
+      }
+    });
+
+    if (!profileResponse.data?.data?.length) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    const profile = profileResponse.data.data[0];
+    
+    // Handle existing links
+    let existingLinks: Record<string, string> = {};
+    if (profile.links) {
+      if (Array.isArray(profile.links)) {
+        profile.links.forEach((item: any) => {
+          if (item.key && item.value) {
+            existingLinks[item.key] = item.value;
+          }
+        });
+      } else if (typeof profile.links === 'object') {
+        existingLinks = profile.links as Record<string, string>;
+      }
+    }
+
+    // Add new link
+    existingLinks[platform] = formattedUrl;
+
+    // Convert to AstraDB format
+    const linksArray = Object.entries(existingLinks).map(([key, value]) => ({
+      key: String(key),
+      value: String(value)
+    }));
+
+    // Update profile
+    const updates = {
+      ...profile,
+      links: linksArray,
+      updated_at: new Date().toISOString()
+    };
+
+    await db.put(`/profile/${profile.profile_id}`, updates);
+
+    res.json({
+      message: 'Social media link added successfully',
+      platform,
+      url: formattedUrl,
+      links: existingLinks
+    });
+  } catch (error) {
+    console.error('Error adding social media link:', error);
+    res.status(500).json({ error: 'Error adding social media link' });
+  }
+};
+
+// Remove social media link
+export const removeSocialMediaLink = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.user_id;
+    const { platform } = req.params;
+
+    if (!userId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    if (!platform) {
+      return res.status(400).json({ error: 'Platform is required' });
+    }
+
+    // Get existing profile
+    const profileResponse = await db.get('/profile', {
+      params: {
+        where: JSON.stringify({
+          user_id: { $eq: userId }
+        })
+      }
+    });
+
+    if (!profileResponse.data?.data?.length) {
+      return res.status(404).json({ error: 'Profile not found' });
+    }
+
+    const profile = profileResponse.data.data[0];
+    
+    // Handle existing links
+    let existingLinks: Record<string, string> = {};
+    if (profile.links) {
+      if (Array.isArray(profile.links)) {
+        profile.links.forEach((item: any) => {
+          if (item.key && item.value) {
+            existingLinks[item.key] = item.value;
+          }
+        });
+      } else if (typeof profile.links === 'object') {
+        existingLinks = profile.links as Record<string, string>;
+      }
+    }
+
+    // Remove link
+    if (existingLinks[platform]) {
+      delete existingLinks[platform];
+    } else {
+      return res.status(404).json({ error: 'Link not found' });
+    }
+
+    // Convert to AstraDB format
+    const linksArray = Object.entries(existingLinks).map(([key, value]) => ({
+      key: String(key),
+      value: String(value)
+    }));
+
+    // Update profile
+    const updates = {
+      ...profile,
+      links: linksArray,
+      updated_at: new Date().toISOString()
+    };
+
+    await db.put(`/profile/${profile.profile_id}`, updates);
+
+    res.json({
+      message: 'Social media link removed successfully',
+      platform,
+      links: existingLinks
+    });
+  } catch (error) {
+    console.error('Error removing social media link:', error);
+    res.status(500).json({ error: 'Error removing social media link' });
   }
 };

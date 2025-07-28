@@ -15,7 +15,11 @@ import {
   addLink,
   removeLink,
   getLinks,
-  getUserLinks
+  getUserLinks,
+  uploadBackgroundImage,
+  getSocialMediaPlatforms,
+  addSocialMediaLink,
+  removeSocialMediaLink
 } from '../controllers/profileController';
 
 const router = express.Router();
@@ -32,6 +36,14 @@ router.delete('/links/:linkName', removeLink);
 router.get('/me', getProfile);
 router.put('/me', updateProfile);
 router.delete('/me', deleteProfile);
+
+// Social media routes
+router.get('/social-platforms', getSocialMediaPlatforms);
+router.post('/social-links', addSocialMediaLink);
+router.delete('/social-links/:platform', removeSocialMediaLink);
+
+// Background image upload (requires multer middleware)
+router.post('/background-image', uploadBackgroundImage);
 
 // Admin routes (requires authentication)
 router.get('/admin/all', getAllProfiles);
