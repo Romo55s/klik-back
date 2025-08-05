@@ -17,7 +17,8 @@ import {
   getAllCards, 
   getCardByIdAdmin, 
   adminActivateCard, 
-  adminDeactivateCard 
+  adminDeactivateCard,
+  adminToggleCardStatus
 } from '../controllers/cardController';
 import { 
   getAllScanLogs 
@@ -46,8 +47,14 @@ router.get('/scans', getAllScanLogs);
 
 // Card management
 router.get('/cards', getAllCards);
-router.get('/cards/:cardId', getCardByIdAdmin);
 router.put('/cards/:cardId/activate', adminActivateCard);
 router.put('/cards/:cardId/deactivate', adminDeactivateCard);
+router.put('/cards/:cardId/status', adminToggleCardStatus);
+router.get('/cards/:cardId', getCardByIdAdmin);
+
+// Test endpoint to verify admin routes are working
+router.get('/test', (req, res) => {
+  res.json({ message: 'Admin routes are working', timestamp: new Date().toISOString() });
+});
 
 export default router; 

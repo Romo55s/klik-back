@@ -12,7 +12,9 @@ import {
   getAllCards,
   getCardByIdAdmin,
   adminActivateCard,
-  adminDeactivateCard
+  adminDeactivateCard,
+  getCardByUsername,
+  getPublicCardStatus
 } from '../controllers/cardController';
 
 const router = express.Router();
@@ -27,6 +29,9 @@ router.get('/', getUserCard); // Get user's single card
 router.post('/:cardId/activate', activateUserCard);
 router.post('/:cardId/deactivate', deactivateCard);
 router.post('/claim', claimCard);
+
+// New routes for card deactivation blocking
+router.get('/username/:username', getCardByUsername);
 
 // Admin card routes (require admin authentication)
 router.get('/admin/all', checkAdmin, getAllCards);

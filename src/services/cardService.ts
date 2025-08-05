@@ -21,14 +21,25 @@ export const createCard = async (userId: string, profileUrl: string, cardData: C
   try {
     console.log('🔍 createCard service called with:', { userId, profileUrl, cardData });
     
+    // Get user information to get username for default card name
+    let username = 'User';
+    try {
+      const userResponse = await db.get(`/users/${userId}`);
+      if (userResponse.data?.data?.[0]?.username) {
+        username = userResponse.data.data[0].username;
+      }
+    } catch (error) {
+      console.warn('Could not fetch user info for card name, using default');
+    }
+    
     const cardId = uuidv4();
     const now = new Date().toISOString();
 
     const card: Card = {
       user_id: userId,
       card_id: cardId,
-      name: cardData.name || `${userId}'s Card`,
-      description: cardData.description || 'Profile access card',
+      name: cardData.name || `Card ${username}`,
+      description: cardData.description || 'Professional digital card',
       status: 'inactive',
       is_verified: false,
       created_at: now,

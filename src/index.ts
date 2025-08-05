@@ -28,8 +28,9 @@ import {
   getLinks, 
   addLink, 
   removeLink, 
-  createProfile 
+  createProfile
 } from './controllers/profileController';
+import { getPublicCardStatus } from './controllers/cardController';
 import qrRoutes from './routes/qrRoutes';
 import scanLogRoutes from './routes/scanLogRoutes';
 
@@ -214,6 +215,9 @@ app.post('/api/profile', checkJwt, ensureUser, createProfile);
 // Profile routes - public routes (must come AFTER protected routes to avoid conflicts)
 app.get('/api/profile/:username', getProfileByUsername);
 app.get('/api/profile/:username/links', getUserLinks);
+
+// Public card status route (no authentication required)
+app.get('/api/cards/public/:username/status', getPublicCardStatus);
 
 // Card routes (all protected)
 app.use('/api/cards', checkJwt, ensureUser, cardRoutes);

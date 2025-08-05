@@ -231,8 +231,8 @@ export const claimCard = async (req: AuthenticatedRequest, res: Response) => {
 
     // Create the card for the claiming user
     const card = await createCardService(userId, profileUser.url_id_text, {
-      name: `${profileUser.username}'s Card`,
-      description: `Profile access card for ${profileUser.username}`
+      name: `Card ${profileUser.username}`,
+      description: 'Professional digital card'
     });
 
     // Activate and verify the card since it was claimed
@@ -415,5 +415,191 @@ export const adminDeactivateCard = async (req: AuthenticatedRequest, res: Respon
   } catch (error) {
     console.error('Error deactivating card as admin:', error);
     res.status(500).json({ error: 'Error deactivating card' });
+  }
+};
+
+// Admin toggle card status (activate/deactivate)
+export const adminToggleCardStatus = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    console.log('🔍 adminToggleCardStatus called with params:', req.params);
+    console.log('🔍 adminToggleCardStatus called with body:', req.body);
+    console.log('🔍 adminToggleCardStatus called with user:', req.user);
+    
+    const { cardId } = req.params;
+    const { status } = req.body; // 'active' or 'inactive'
+    const adminUserId = req.user?.user_id;
+
+    console.log('🔍 Processing request:', { cardId, status, adminUserId });
+
+    if (!status || !['active', 'inactive'].includes(status)) {
+      console.log('❌ Invalid status provided:', status);
+      return res.status(400).json({ error: 'Status must be either "active" or "inactive"' });
+    }
+
+    console.log('🔍 Admin: Toggling card status:', cardId, 'to:', status, 'by admin:', adminUserId);
+
+    // Get all cards and find the one with matching card_id
+    let cardResponse;
+    try {
+      cardResponse = await db.get('/card', {
+        params: {
+          where: JSON.stringify({
+            created_at: { $gte: '2020-01-01T00:00:00.000Z' }
+          })
+        }
+      });
+      console.log('🔍 All cards query result:', cardResponse.data);
+    } catch (error) {
+      console.log('❌ Error getting all cards:', error);
+      return res.status(404).json({ error: 'Card not found' });
+    }
+    
+    // Find the card with matching card_id
+    const allCards = cardResponse?.data?.data || [];
+    const foundCard = allCards.find((c: any) => c.card_id === cardId);
+    
+    if (!foundCard) {
+      console.log('❌ Card not found:', cardId);
+      console.log('❌ Available card IDs:', allCards.map((c: any) => c.card_id));
+      return res.status(404).json({ error: 'Card not found' });
+    }
+
+    console.log('🔍 Found card:', foundCard);
+
+    // Update card status using the correct primary key structure
+    const updatedCard = await db.put(`/card/${foundCard.user_id}/${foundCard.card_id}`, {
+      status: status,
+      updated_at: new Date().toISOString()
+    });
+
+    console.log('✅ Admin: Card status toggled successfully');
+
+    res.json({
+      message: `Card ${status === 'active' ? 'activated' : 'deactivated'} successfully by admin`,
+      card: updatedCard.data
+    });
+  } catch (error) {
+    console.error('❌ Error toggling card status as admin:', error);
+    res.status(500).json({ error: 'Error toggling card status' });
+  }
+};
+
+// Get card by username (authenticated users)
+export const getCardByUsername = async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const { username } = req.params;
+    const requestingUserId = req.user?.user_id;
+
+    if (!requestingUserId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    if (!username) {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+
+    console.log('🔍 Getting card for username:', username, 'requested by user:', requestingUserId);
+
+    // First get the user by username
+    const userResponse = await db.get('/users', {
+      params: {
+        where: JSON.stringify({
+          username: { $eq: username }
+        })
+      }
+    });
+
+    if (!userResponse.data?.data?.length) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const user = userResponse.data.data[0];
+
+    // Get the user's cards
+    const cardsResponse = await db.get('/card', {
+      params: {
+        where: JSON.stringify({
+          user_id: { $eq: user.user_id }
+        })
+      }
+    });
+
+    const cards = cardsResponse.data?.data || [];
+
+    if (!cards.length) {
+      return res.status(404).json({ error: 'No cards found for this user' });
+    }
+
+    // Return the first card (assuming one card per user)
+    const card = cards[0];
+
+    console.log('✅ Card retrieved for username:', username);
+
+    res.json({
+      card,
+      user: {
+        user_id: user.user_id,
+        username: user.username,
+        email: user.email
+      }
+    });
+  } catch (error) {
+    console.error('Error getting card by username:', error);
+    res.status(500).json({ error: 'Error getting card' });
+  }
+};
+
+// Get public card status by username (no authentication required)
+export const getPublicCardStatus = async (req: Request, res: Response) => {
+  try {
+    const { username } = req.params;
+
+    if (!username) {
+      return res.status(400).json({ error: 'Username is required' });
+    }
+
+    console.log('🔍 Getting public card status for username:', username);
+
+    // First get the user by username
+    const userResponse = await db.get('/users', {
+      params: {
+        where: JSON.stringify({
+          username: { $eq: username }
+        })
+      }
+    });
+
+    if (!userResponse.data?.data?.length) {
+      return res.json({ status: 'not_found' });
+    }
+
+    const user = userResponse.data.data[0];
+
+    // Get the user's cards
+    const cardsResponse = await db.get('/card', {
+      params: {
+        where: JSON.stringify({
+          user_id: { $eq: user.user_id }
+        })
+      }
+    });
+
+    const cards = cardsResponse.data?.data || [];
+
+    if (!cards.length) {
+      return res.json({ status: 'not_found' });
+    }
+
+    // Return only the status information (no sensitive data)
+    const card = cards[0];
+
+    console.log('✅ Public card status retrieved for username:', username);
+
+    res.json({
+      status: card.status
+    });
+  } catch (error) {
+    console.error('Error getting public card status:', error);
+    res.json({ status: 'not_found' });
   }
 }; 
